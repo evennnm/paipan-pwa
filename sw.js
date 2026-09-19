@@ -1,8 +1,9 @@
 /* 离线缓存 Service Worker: 缓存后断网也能排盘 */
-const CACHE = 'paipan-v1';
+const CACHE = 'paipan-v2';
 const ASSETS = [
   './',
   './index.html',
+  './十二神.html',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png'
