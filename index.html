@@ -64,6 +64,9 @@ tr.boundary td { background: #f8f9fb; }
 .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
 .tag.ok { background: #e6f4e6; color: #2a7a2a; }
 .tag.cover { background: #fbe6e6; color: #b03a3a; }
+.tag.plain { background: #ececec; color: #666; }
+a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb; text-decoration: none; }
+a.jump:hover { text-decoration: underline; }
 .via { color: #8a6d3b; font-size: 12px; }
 .bazi-big { font-size: 26px; font-weight: bold; letter-spacing: 6px; margin: 6px 0; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -91,6 +94,30 @@ footer { margin: 18px 0 8px; }
   .via { font-size: 11px; }
   .dropdown { left: 8px; right: 8px; min-width: 0; } /* 搜索下拉铺满手机宽度 */
 }
+
+/* ===== 十二神页面(gods12.html) ===== */
+.tabbtn {
+  padding: 6px 18px; font-size: 14px; background: #fff; color: #4a7ebb;
+  border: 1px solid #4a7ebb; border-radius: 4px; cursor: pointer;
+}
+.tabbtn:hover { background: #eef3fa; }
+.tabbtn.on { background: #4a7ebb; color: #fff; }
+.card.dcard { min-width: 84px; flex: 0 0 auto; cursor: pointer; text-align: center; }
+.card.dcard:hover { border-color: #4a7ebb; }
+.card.dcard.sel { border-color: #4a7ebb; background: #eef3fa; box-shadow: 0 0 0 1px #4a7ebb inset; }
+.shenchips span { display: inline-block; margin: 2px 6px 2px 0; }
+
+/* 十二神页面: 命盘八字五行着色(色值同 app.js 五行统计条 WX_COLOR,与蓝白主题协调) */
+.wx-mu { color: #3d8b37; }   /* 木 绿 */
+.wx-huo { color: #c0392b; }  /* 火 红 */
+.wx-tu { color: #8d6e4a; }   /* 土 土色 */
+.wx-jin { color: #b8860b; }  /* 金 金色 */
+.wx-shui { color: #3a6ea5; } /* 水 蓝 */
+/* 命盘三排(横排): 左侧小标签,右侧四字 flex 均匀横排,五行着色保留 */
+.pan3row { display: flex; align-items: baseline; gap: 8px 28px; margin: 6px 0; }
+.pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
+.pan3row .gz3 { font-size: 26px; font-weight: bold; min-width: 40px; text-align: center; }
+.pan3row .gz3s { font-size: 18px; font-weight: bold; min-width: 64px; text-align: center; }
 
 </style>
 </head>
@@ -145,12 +172,13 @@ footer { margin: 18px 0 8px; }
   </form>
 
   <div id="result" style="display:none">
-    <section><h2>基本信息</h2><div id="secBasic"></div></section>
+    <section><h2>基本信息 <a id="toGods12" class="jump" href="#" style="display:none">串宫押运十二神 →</a></h2><div id="secBasic"></div></section>
     <section><h2>四柱</h2><div id="secPillars"></div></section>
     <section class="feature"><h2>节令口径 <small>启用盲派排盘技法时显示纬度调整月令过程</small></h2><div id="secJieqi"></div></section>
     <section><h2>胎元 / 命宫 / 身宫</h2><div id="secPalaces"></div></section>
     <section><h2>大运</h2><div id="secDayun"></div></section>
     <section><h2>刑冲合害</h2><div id="secGX"></div></section>
+    <section><h2>神煞</h2><div id="secShensha"></div></section>
     <section><h2>五行阴阳统计</h2><div id="secStat"></div></section>
   </div>
 
@@ -4180,6 +4208,216 @@ function GetGX(tg, dz) {
  */
 
 </script>
+<script>/* ==== src/engine/shensha.js ==== */
+/**
+ * 神煞模块(公有领域标准口诀,规则表见下;释义为本人自写一句话)
+ *
+ * 查法分四类:
+ *   1. 三合局神煞(驿马/桃花/华盖/将星/劫煞/灾煞/亡神): 以年支和日支各查一遍,命中任一即算;
+ *   2. 日干神煞(天乙贵人/太极贵人/文昌/学堂/禄神/羊刃/金舆/红艳): 以日干查四柱地支;
+ *   3. 年支神煞(孤辰/寡宿/天喜/红鸾): 以年支查四柱地支;
+ *   4. 月支神煞(天德/月德): 以月支查,目标可为天干或地支,四柱干支中命中任一即算。
+ *
+ * 用法:
+ *   Node:   var Shensha = require("./engine/shensha.js"); var ss = new Shensha(cal);
+ *   浏览器: 先引 calendar.js 再引本文件,后 new Shensha(cal);
+ *   var r = Paipan.computeFull({...}); ss.compute(r) => 四柱各自命中的神煞(结构见文件尾注释)
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./calendar.js'));
+    } else {
+        root.Shensha = factory(root.Calendar);
+    }
+}(typeof self !== 'undefined' ? self : this, function (Calendar) {
+    'use strict';
+
+    /* ===== 神煞元数据: 吉凶属性 + 一句话释义(自写) ===== */
+    var META = {
+        '驿马': { luck: '中性', desc: '主奔波迁移,动中生财' },
+        '桃花': { luck: '中性', desc: '主人缘魅力、异性缘,亦防感情纠葛' }, // 又名咸池
+        '华盖': { luck: '中性', desc: '主孤高好学,亲近玄学艺术' },
+        '将星': { luck: '吉', desc: '主掌权柄,有领导统御之能' },
+        '劫煞': { luck: '凶', desc: '主破耗阻碍,防外力劫夺' },
+        '灾煞': { luck: '凶', desc: '主意外灾咎,防官司是非' },
+        '亡神': { luck: '凶', desc: '主耗散遗失,心神不宁' },
+        '天乙贵人': { luck: '吉', desc: '主逢凶化吉,一生贵人扶助' },
+        '太极贵人': { luck: '吉', desc: '主聪慧好学,喜神秘文化' },
+        '文昌': { luck: '吉', desc: '主文才学业,利考试功名' },
+        '学堂': { luck: '吉', desc: '主学业精进,书香才气' },
+        '禄神': { luck: '吉', desc: '主食禄俸禄,衣食丰足' },
+        '羊刃': { luck: '凶', desc: '主刚烈冲动,防刑伤血光' },
+        '金舆': { luck: '吉', desc: '主富贵车轿,得配偶财助' },
+        '红艳': { luck: '中性', desc: '主多情艳丽,异性缘重' },
+        '孤辰': { luck: '凶', desc: '主孤僻少靠,亲缘淡薄' },
+        '寡宿': { luck: '凶', desc: '主孤独寡合,婚姻迟滞' },
+        '天喜': { luck: '吉', desc: '主喜庆添丁,人缘和乐' },
+        '红鸾': { luck: '吉', desc: '主婚恋喜庆,正缘将近' },
+        '天德': { luck: '吉', desc: '主逢凶化吉,积德善缘' },
+        '月德': { luck: '吉', desc: '主仁慈祥和,遇难呈祥' }
+    };
+
+    /* ===== 1. 三合局神煞: 以年支/日支所在三合局查目标支 ===== */
+    // 三合局分组: 申子辰=0 寅午戌=1 巳酉丑=2 亥卯未=3
+    var SANHE_GROUP = { 8: 0, 0: 0, 4: 0, 2: 1, 6: 1, 10: 1, 5: 2, 9: 2, 1: 2, 11: 3, 3: 3, 7: 3 };
+    // 每组对应的目标支(地支代码),顺序同 0/1/2/3 组
+    var SANHE_RULES = [
+        { name: '驿马', map: [2, 8, 11, 5] },  // 申子辰→寅 寅午戌→申 巳酉丑→亥 亥卯未→巳
+        { name: '桃花', map: [9, 3, 6, 0] },   // 申子辰→酉 寅午戌→卯 巳酉丑→午 亥卯未→子
+        { name: '华盖', map: [4, 10, 1, 7] },  // 申子辰→辰 寅午戌→戌 巳酉丑→丑 亥卯未→未
+        { name: '将星', map: [0, 6, 9, 3] },   // 申子辰→子 寅午戌→午 巳酉丑→酉 亥卯未→卯
+        { name: '劫煞', map: [5, 11, 2, 8] },  // 申子辰→巳 寅午戌→亥 巳酉丑→寅 亥卯未→申
+        { name: '灾煞', map: [6, 0, 3, 9] },   // 申子辰→午 寅午戌→子 巳酉丑→卯 亥卯未→酉
+        { name: '亡神', map: [11, 5, 8, 2] }   // 申子辰→亥 寅午戌→巳 巳酉丑→申 亥卯未→寅
+    ];
+
+    /* ===== 2. 日干神煞: 以日干查目标支(数组,可多支) ===== */
+    // 下标 = 天干代码(甲0乙1丙2丁3戊4己5庚6辛7壬8癸9),值为目标地支代码数组
+    var GAN_RULES = [
+        { name: '天乙贵人', map: [[1, 7], [0, 8], [11, 9], [11, 9], [1, 7], [0, 8], [1, 7], [6, 2], [5, 3], [5, 3]] }, // 甲戊庚→丑未 乙己→子申 丙丁→亥酉 辛→午寅 壬癸→巳卯
+        { name: '太极贵人', map: [[0, 6], [0, 6], [3, 9], [3, 9], [4, 10, 1, 7], [4, 10, 1, 7], [2, 11], [2, 11], [5, 8], [5, 8]] }, // 甲乙→子午 丙丁→卯酉 戊己→辰戌丑未 庚辛→寅亥 壬癸→巳申
+        { name: '文昌', map: [[5], [6], [8], [9], [8], [9], [11], [0], [2], [3]] }, // 甲巳 乙午 丙戊申 丁己酉 庚亥 辛子 壬寅 癸卯
+        { name: '学堂', map: [[11], [6], [2], [9], [2], [9], [5], [0], [8], [3]] }, // 甲亥 乙午 丙戊寅 丁己酉 庚巳 辛子 壬申 癸卯
+        { name: '禄神', map: [[2], [3], [5], [6], [5], [6], [8], [9], [11], [0]] }, // 甲寅 乙卯 丙戊巳 丁己午 庚申 辛酉 壬亥 癸子
+        { name: '羊刃', map: [[3], [4], [6], [7], [6], [7], [9], [10], [0], [1]] }, // 甲卯 乙辰 丙戊午 丁己未 庚酉 辛戌 壬子 癸丑
+        { name: '金舆', map: [[4], [5], [7], [8], [7], [8], [10], [11], [1], [2]] }, // 甲辰 乙巳 丙戊未 丁己申 庚戌 辛亥 壬丑 癸寅
+        { name: '红艳', map: [[6], [8], [2], [7], [4], [4], [10], [9], [0], [8]] }  // 甲午 乙申 丙寅 丁未 戊己辰 庚戌 辛酉 壬子 癸申
+    ];
+
+    /* ===== 3. 年支神煞 ===== */
+    // 季节组: 寅卯辰=0 巳午未=1 申酉戌=2 亥子丑=3
+    var SEASON_GROUP = { 2: 0, 3: 0, 4: 0, 5: 1, 6: 1, 7: 1, 8: 2, 9: 2, 10: 2, 11: 3, 0: 3, 1: 3 };
+    var GUASU_RULES = [
+        { name: '孤辰', map: [5, 8, 11, 2] },  // 寅卯辰→巳 巳午未→申 申酉戌→亥 亥子丑→寅
+        { name: '寡宿', map: [1, 4, 7, 10] }   // 寅卯辰→丑 巳午未→辰 申酉戌→未 亥子丑→戌
+    ];
+    // 天喜/红鸾: 逐支对支
+    var TIANXI = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11, 10]; // 子→酉 丑→申 寅→未 卯→午 辰→巳 巳→辰 午→卯 未→寅 申→丑 酉→子 戌→亥 亥→戌
+    var HONGLUAN = [3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 5, 4]; // 子→卯 丑→寅 寅→丑 卯→子 辰→亥 巳→戌 午→酉 未→申 申→未 酉→午 戌→巳 亥→辰
+
+    /* ===== 4. 月支神煞(目标可为天干或地支字) ===== */
+    // 天德: 逐月支查(字): 寅丁 卯申 辰壬 巳辛 午亥 未甲 申癸 酉寅 戌丙 亥乙 子巳 丑庚
+    var TIANDE = { 2: '丁', 3: '申', 4: '壬', 5: '辛', 6: '亥', 7: '甲', 8: '癸', 9: '寅', 10: '丙', 11: '乙', 0: '巳', 1: '庚' };
+    // 月德: 按三合局查(天干字): 寅午戌→丙 申子辰→壬 亥卯未→甲 巳酉丑→庚
+    var YUEDE = ['壬', '丙', '庚', '甲']; // 下标同 SANHE_GROUP
+
+    var ZHU = ['年', '月', '日', '时'];
+
+    /**
+     * @param Calendar cal 历法底座实例(用其干支字表)
+     */
+    function Shensha(cal) {
+        this.cal = cal || new Calendar();
+    }
+
+    /**
+     * 消费 computeFull 输出,查四柱神煞
+     * @param object r Paipan.computeFull 的返回(用到 pillars 的 tg/dz/code)
+     * @return { pillars: [{pos,gz,list:[{name,luck,desc,basis}]}...x4], total }
+     */
+    Shensha.prototype.compute = function (r) {
+        var cal = this.cal;
+        var P = r.pillars;
+        var tg = [P.year.tg, P.month.tg, P.day.tg, P.hour.tg];
+        var dz = [P.year.dz, P.month.dz, P.day.dz, P.hour.dz];
+        var out = [];
+        var total = 0;
+        for (var i = 0; i < 4; i++) {
+            out.push({ pos: ZHU[i], gz: cal.gz[P[['year', 'month', 'day', 'hour'][i]].code], list: [] });
+        }
+        function hit(pillarIdx, name, basis) {
+            var m = META[name];
+            // 同一柱同一神煞只记一次(年支日支都查到同一支时合并依据说明)
+            var list = out[pillarIdx].list;
+            for (var k = 0; k < list.length; k++) {
+                if (list[k].name === name) {
+                    if (list[k].basis.indexOf(basis) < 0) {
+                        list[k].basis += '、' + basis;
+                    }
+                    return;
+                }
+            }
+            list.push({ name: name, luck: m.luck, desc: m.desc, basis: basis });
+            total++;
+        }
+
+        // 1. 三合局神煞: 年支和日支各查一遍
+        var yearZhi = dz[0], dayZhi = dz[2];
+        var bases = [['年支', yearZhi], ['日支', dayZhi]];
+        for (var b = 0; b < 2; b++) {
+            var basisName = bases[b][0], basisZhi = bases[b][1];
+            var g = SANHE_GROUP[basisZhi];
+            for (var s = 0; s < SANHE_RULES.length; s++) {
+                var rule = SANHE_RULES[s];
+                var target = rule.map[g];
+                for (var i1 = 0; i1 < 4; i1++) {
+                    if (dz[i1] === target) {
+                        hit(i1, rule.name, basisName + cal.cdz[basisZhi] + '查得' + cal.cdz[target]);
+                    }
+                }
+            }
+        }
+
+        // 2. 日干神煞
+        var dayGan = tg[2];
+        for (var s2 = 0; s2 < GAN_RULES.length; s2++) {
+            var rule2 = GAN_RULES[s2];
+            var targets = rule2.map[dayGan];
+            for (var i2 = 0; i2 < 4; i2++) {
+                if (targets.indexOf(dz[i2]) >= 0) {
+                    hit(i2, rule2.name, '日干' + cal.ctg[dayGan] + '查得' + cal.cdz[dz[i2]]);
+                }
+            }
+        }
+
+        // 3. 年支神煞
+        var sg = SEASON_GROUP[yearZhi];
+        for (var s3 = 0; s3 < GUASU_RULES.length; s3++) {
+            var rule3 = GUASU_RULES[s3];
+            var t3 = rule3.map[sg];
+            for (var i3 = 0; i3 < 4; i3++) {
+                if (dz[i3] === t3) {
+                    hit(i3, rule3.name, '年支' + cal.cdz[yearZhi] + '查得' + cal.cdz[t3]);
+                }
+            }
+        }
+        var tx = TIANXI[yearZhi], hl = HONGLUAN[yearZhi];
+        for (var i4 = 0; i4 < 4; i4++) {
+            if (dz[i4] === tx) {
+                hit(i4, '天喜', '年支' + cal.cdz[yearZhi] + '查得' + cal.cdz[tx]);
+            }
+            if (dz[i4] === hl) {
+                hit(i4, '红鸾', '年支' + cal.cdz[yearZhi] + '查得' + cal.cdz[hl]);
+            }
+        }
+
+        // 4. 月支神煞: 目标可为天干或地支,四柱干支中命中任一即算
+        var monthZhi = dz[1];
+        var td = TIANDE[monthZhi], yd = YUEDE[SANHE_GROUP[monthZhi]];
+        for (var i5 = 0; i5 < 4; i5++) {
+            if (cal.ctg[tg[i5]] === td || cal.cdz[dz[i5]] === td) {
+                hit(i5, '天德', '月支' + cal.cdz[monthZhi] + '查得' + td);
+            }
+            if (cal.ctg[tg[i5]] === yd || cal.cdz[dz[i5]] === yd) {
+                hit(i5, '月德', '月支' + cal.cdz[monthZhi] + '查得' + yd);
+            }
+        }
+
+        return { pillars: out, total: total };
+    };
+
+    Shensha.META = META;
+    return Shensha;
+}));
+/**
+ * compute 返回结构:
+ * {
+ *   pillars: [{ pos:'年', gz:'丁巳', list:[{ name:'禄神', luck:'吉', desc:'...', basis:'日干戊查得巳' }] }, x4],
+ *   total: int  // 命中总数
+ * }
+ */
+
+</script>
 <script>/* ==== src/engine/paipan.js ==== */
 /**
  * 排盘汇总入口(M1+M2+M3): 四柱 -> 胎元/命宫/身宫 -> 大运 -> 命理关系标注,一次算完并保留全部中间过程
@@ -4194,12 +4432,13 @@ function GetGX(tg, dz) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(
             require('./calendar.js'), require('./geo.js'), require('./localjq.js'),
-            require('./pillars.js'), require('./palaces.js'), require('./dayun.js'), require('./relations.js')
+            require('./pillars.js'), require('./palaces.js'), require('./dayun.js'), require('./relations.js'),
+            require('./shensha.js')
         );
     } else {
-        root.Paipan = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars, root.Palaces, root.Dayun, root.Relations);
+        root.Paipan = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars, root.Palaces, root.Dayun, root.Relations, root.Shensha);
     }
-}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars, Palaces, Dayun, Relations) {
+}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars, Palaces, Dayun, Relations, Shensha) {
     'use strict';
 
     var cal = new Calendar();
@@ -4207,6 +4446,7 @@ function GetGX(tg, dz) {
     var pal = new Palaces(cal);
     var dy = new Dayun(cal);
     var rel = new Relations(cal);
+    var ss = new Shensha(cal);
 
     /**
      * 完整排盘
@@ -4216,6 +4456,7 @@ function GetGX(tg, dz) {
      *   palaces:   {taiyuan, minggong, shengong, trace}
      *   dayun:     {shun, dirText, birth, target, rawDays, totalDays, div3, birthOrder, start, yun}
      *   relations: {dayMaster, pillars(十神/藏干/长生/纳音/空亡), gx(刑冲合害), wuxing, yinyang, xunkong}
+     *   shensha:   {pillars: [{pos,gz,list:[{name,luck,desc,basis}]}], total}  // 神煞(吉/凶/中性)
      */
     function computeFull(opt, yunCount) {
         var r = pp.compute(opt);
@@ -4225,13 +4466,14 @@ function GetGX(tg, dz) {
         r.palaces = pal.compute(r);
         r.dayun = dy.compute(r, yunCount || 8);
         r.relations = rel.annotate(r);
+        r.shensha = ss.compute(r);
         return r;
     }
 
     return {
         computeFull: computeFull,
         // 暴露子引擎实例,便于UI取用中间表(如节令表、城市库)
-        cal: cal, pillars: pp, palaces: pal, dayun: dy, relations: rel
+        cal: cal, pillars: pp, palaces: pal, dayun: dy, relations: rel, shensha: ss
     };
 }));
 
@@ -4404,6 +4646,28 @@ function GetGX(tg, dz) {
             + '<p>阴阳(不含藏干):' + yy.names.map(function (n, i) { return n + ' ' + yy.count[i]; }).join('、') + '</p>';
     }
 
+    // 神煞: 四柱四列,每柱列出命中的神煞(吉绿/凶红/中性灰,title 附释义)
+    function buildShensha(r) {
+        var s = r.shensha;
+        if (!s || !s.total) {
+            return '<p class="muted">四柱未命中神煞。</p>';
+        }
+        var luckCls = { '吉': 'tag ok', '凶': 'tag cover', '中性': 'tag plain' };
+        var h = '<table><tr><th></th>' + s.pillars.map(function (p) { return '<th>' + p.pos + '柱 ' + esc(p.gz) + '</th>'; }).join('') + '</tr>';
+        h += '<tr><th>神煞</th>' + s.pillars.map(function (p) {
+            if (!p.list.length) {
+                return '<td class="muted">—</td>';
+            }
+            return '<td>' + p.list.map(function (x) {
+                return '<span class="' + luckCls[x.luck] + '" title="' + esc(x.desc) + '">' + esc(x.name) + '</span>'
+                    + '<br><span class="muted" style="font-size:11px">' + esc(x.basis) + '</span>';
+            }).join('<br>') + '</td>';
+        }).join('') + '</tr></table>';
+        h += '<p class="muted">查法:驿马/桃花/华盖/将星/劫煞/灾煞/亡神以年支+日支查;天乙贵人/太极贵人/文昌/学堂/禄神/羊刃/金舆/红艳以日干查;'
+            + '孤辰/寡宿/天喜/红鸾以年支查;天德/月德以月支查(命中四柱干支任一即算)。悬停神煞名看释义。</p>';
+        return h;
+    }
+
     function buildAll(r) {
         return {
             secBasic: buildBasic(r),
@@ -4412,6 +4676,7 @@ function GetGX(tg, dz) {
             secPalaces: buildPalaces(r),
             secDayun: buildDayun(r),
             secGX: buildGX(r),
+            secShensha: buildShensha(r),
             secStat: buildStat(r)
         };
     }
@@ -4567,6 +4832,7 @@ function GetGX(tg, dz) {
                 opt.year = s[0]; opt.month = s[1]; opt.day = s[2];
             }
             // 出生地: 级联选择(省/市/区)或手动经纬度
+            var lastPlace = null; // 供"串宫押运十二神"跳转带参
             if ($('country').value === 'manual') {
                 var mLon = parseFloat(lonIn.value), mLat = parseFloat(latIn.value);
                 if (isNaN(mLon) || isNaN(mLat) || mLat < -90 || mLat > 90 || mLon < -180 || mLon > 180) {
@@ -4576,6 +4842,7 @@ function GetGX(tg, dz) {
                 opt.lat = mLat;
                 opt.lon = mLon;
                 opt.city = undefined;
+                lastPlace = { manual: true, lat: mLat, lon: mLon };
             } else {
                 var c = null;
                 if (pickedSearch) { c = pickedSearch; }
@@ -4589,6 +4856,7 @@ function GetGX(tg, dz) {
                 opt.city = c.name;
                 opt.lat = c.w;
                 opt.lon = c.j;
+                lastPlace = { manual: false, name: c.name, path: c.path, lat: c.w, lon: c.j };
             }
             var r = Paipan.computeFull(opt);
             if (!r) {
@@ -4602,13 +4870,52 @@ function GetGX(tg, dz) {
                 }
             }
             $('result').style.display = '';
+            updateGods12Link(lastPlace);
         });
+
+        // "串宫押运十二神 →"跳转链接: 带上本次排盘参数(URL hash),目标页按当前文件名区分开发版/成品
+        function updateGods12Link(place) {
+            var link = $('toGods12');
+            if (!link) {
+                return;
+            }
+            // file:// 下 pathname 是百分号编码的,先解码再判断
+            var path2 = (typeof location !== 'undefined') ? decodeURIComponent(location.pathname || '') : '';
+            var inDist = path2.indexOf('排盘软件') >= 0;
+            var base = inDist ? '十二神.html' : 'gods12.html';
+            var p = [];
+            p.push('mode=' + $('mode').value);
+            p.push('year=' + $('yy').value);
+            p.push('month=' + $('mm').value);
+            p.push('day=' + $('dd').value);
+            p.push('hour=' + $('hh').value);
+            p.push('minute=' + ($('mi').value || '0'));
+            p.push('leap=' + ($('leap').checked ? '1' : '0'));
+            p.push('gender=' + encodeURIComponent(doc.querySelector('input[name=gender]:checked').value));
+            p.push('zwz=' + ($('zwz').checked ? '1' : '0'));
+            p.push('zty=' + ($('zty').checked ? '1' : '0'));
+            p.push('blind=' + ($('blindPaipanTechnique').checked ? '1' : '0'));
+            if (place) {
+                if (place.manual) {
+                    p.push('manual=1');
+                    p.push('lat=' + place.lat);
+                    p.push('lon=' + place.lon);
+                } else {
+                    p.push('city=' + encodeURIComponent(place.name || ''));
+                    p.push('path=' + encodeURIComponent((place.path || []).join('/')));
+                    p.push('lat=' + place.lat);
+                    p.push('lon=' + place.lon);
+                }
+            }
+            link.href = base + '#' + p.join('&');
+            link.style.display = '';
+        }
     }
 
     return {
         buildAll: buildAll,
         buildBasic: buildBasic, buildPillars: buildPillars, buildJieqi: buildJieqi,
-        buildPalaces: buildPalaces, buildDayun: buildDayun, buildGX: buildGX, buildStat: buildStat,
+        buildPalaces: buildPalaces, buildDayun: buildDayun, buildGX: buildGX, buildShensha: buildShensha, buildStat: buildStat,
         bind: bind
     };
 }));
