@@ -5687,13 +5687,14 @@ function GetGX(tg, dz) {
         }
         $('submit').addEventListener('click', doPaipan);
 
-        // "← 返回排盘"链接: 按当前文件名区分开发版/成品(file:// 下 pathname 是百分号编码的,先解码)
+        // "← 返回排盘"链接: 开发版(gods12.html,有外链script)与线上PWA(有manifest链接)都回 index.html;
+        // 仅本地成品(dist/十二神.html,无外链无manifest)回 排盘软件.html
         (function () {
-            var path2 = (typeof location !== 'undefined') ? decodeURIComponent(location.pathname || '') : '';
-            var inDist = path2.indexOf('十二神') >= 0;
             var back = $('backMain');
             if (back) {
-                back.href = inDist ? '排盘软件.html' : 'index.html';
+                var isDev = !!doc.querySelector('script[src]');
+                var isPwa = !!doc.querySelector('link[rel="manifest"]');
+                back.href = (isDev || isPwa) ? 'index.html' : '排盘软件.html';
             }
         })();
 
