@@ -4873,16 +4873,15 @@ function GetGX(tg, dz) {
             updateGods12Link(lastPlace);
         });
 
-        // "串宫押运十二神 →"跳转链接: 带上本次排盘参数(URL hash),目标页按当前文件名区分开发版/成品
+        // "串宫押运十二神 →"跳转链接: 带上本次排盘参数(URL hash),目标页区分开发版/成品
         function updateGods12Link(place) {
             var link = $('toGods12');
             if (!link) {
                 return;
             }
-            // file:// 下 pathname 是百分号编码的,先解码再判断
-            var path2 = (typeof location !== 'undefined') ? decodeURIComponent(location.pathname || '') : '';
-            var inDist = path2.indexOf('排盘软件') >= 0;
-            var base = inDist ? '十二神.html' : 'gods12.html';
+            // 开发版 index.html 有 <script src="src/..."> 外链;打包版(dist/排盘软件.html)与 PWA(pwa/index.html)都是内联
+            var isDev = !!doc.querySelector('script[src]');
+            var base = isDev ? 'gods12.html' : '十二神.html';
             var p = [];
             p.push('mode=' + $('mode').value);
             p.push('year=' + $('yy').value);
