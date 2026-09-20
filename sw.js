@@ -1,5 +1,5 @@
-/* 离线缓存 Service Worker: 缓存后断网也能排盘 */
-const CACHE = 'paipan-v2';
+/* 离线缓存 Service Worker: 页面 network-first(保证拿到最新),静态资源 cache-first */
+const CACHE = 'paipan-v3'; // 每次发布更新页面时递增此版本号,强制刷新缓存
 const ASSETS = [
   './',
   './index.html',
@@ -27,11 +27,27 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy));
-      return res;
-    }))
-  );
+  var url = e.request.url;
+  var isPage = e.request.mode === 'navigate' || url.indexOf('.html') >= 0 || url.endsWith('/');
+  if (isPage) {
+    // 页面: network-first,保证拿到最新;断网回退缓存
+    e.respondWith(
+      fetch(e.request).then(function (res) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
+        return res;
+      }).catch(function () { return caches.match(e.request); })
+    );
+  } else {
+    // 静态资源(图标等): cache-first
+    e.respondWith(
+      caches.match(e.request).then(function (hit) {
+        return hit || fetch(e.request).then(function (res) {
+          var copy = res.clone();
+          caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
+          return res;
+        });
+      })
+    );
+  }
 });
