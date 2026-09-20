@@ -5059,9 +5059,11 @@ function GetGX(tg, dz) {
         }
         dayKong = dayKong || []; yearKong = yearKong || [];
         var kong = dayKong.concat(yearKong).filter(function (v, i, a) { return a.indexOf(v) === i; }); // 合并展示用
-        // 胎/身/命宫生效的空亡集合:年柱空 + (日干起太岁时才含日柱空)
-        var kong3 = yearKong.concat(opt.mode === 'rigan' ? dayKong : [])
-            .filter(function (v, i, a) { return a.indexOf(v) === i; });
+        // 胎/身/命宫生效的空亡集合(黄金标准):只有原局(日干起太岁,rigan)时胎身命才变;
+        // 大运/流年起太岁一律不变(用户确认;丙午大运例图里身命的"变"是错的)。
+        var kong3 = (opt.mode === 'rigan')
+            ? dayKong.concat(yearKong).filter(function (v, i, a) { return a.indexOf(v) === i; })
+            : [];
 
         // 逐字排:干查通支、支查自身;所在柱地支(host)落空亡集合则按变神表变换
         function spiritOf(char, isGan, hostZhi, kongSet) {
