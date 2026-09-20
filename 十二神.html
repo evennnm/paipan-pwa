@@ -188,6 +188,7 @@ footer { margin: 18px 0 8px; }
         <span id="liunianBox" style="display:none">
           <label>流年 <select id="lnGan"></select><select id="lnZhi"></select></label>
         </span>
+        <label class="inline" title="日柱空亡确定参与变神;年柱空亡可选"><input type="checkbox" id="useYearKong" checked> 年柱空亡参与变神</label>
       </div>
       <div id="secStart"></div>
       <div id="secDySpirit"></div>
@@ -5058,11 +5059,14 @@ function GetGX(tg, dz) {
             }
         }
         dayKong = dayKong || []; yearKong = yearKong || [];
-        var kong = dayKong.concat(yearKong).filter(function (v, i, a) { return a.indexOf(v) === i; }); // 合并展示用
+        // 年柱空可选(用户确认):useYearKong === false 时年柱空不参与变神;日柱空确定参与
+        var useYearKong = opt.useYearKong !== false;
+        var effYearKong = useYearKong ? yearKong : [];
+        var kong = dayKong.concat(effYearKong).filter(function (v, i, a) { return a.indexOf(v) === i; }); // 合并展示用
         // 胎/身/命宫生效的空亡集合(黄金标准):只有原局(日干起太岁,rigan)时胎身命才变;
         // 大运/流年起太岁一律不变(用户确认;丙午大运例图里身命的"变"是错的)。
         var kong3 = (opt.mode === 'rigan')
-            ? dayKong.concat(yearKong).filter(function (v, i, a) { return a.indexOf(v) === i; })
+            ? dayKong.concat(effYearKong).filter(function (v, i, a) { return a.indexOf(v) === i; })
             : [];
 
         // 逐字排:干查通支、支查自身;所在柱地支(host)落空亡集合则按变神表变换
@@ -5169,9 +5173,10 @@ function GetGX(tg, dz) {
             mode: opt.mode,
             start: start,
             table: startFrom(start.zhi).表,
-            kongwang: kong,     // 合并(展示用)
-            dayKong: dayKong,   // 日柱空
-            yearKong: yearKong, // 年柱空
+            kongwang: kong,     // 合并(展示用,已按 useYearKong 过滤年柱空)
+            dayKong: dayKong,   // 日柱空(确定参与)
+            yearKong: yearKong, // 年柱空原始值
+            useYearKong: useYearKong, // 年柱空是否参与变神(可选开关)
             dayun: dayun,
             qizhu: qizhu,
             combos: combos
@@ -5324,7 +5329,8 @@ function GetGX(tg, dz) {
         var base = pillarsFromR(r);
         var opt = {
             pillars: base.pillars,
-            taiyuan: base.taiyuan, shengong: base.shengong, minggong: base.minggong
+            taiyuan: base.taiyuan, shengong: base.shengong, minggong: base.minggong,
+            useYearKong: state.useYearKong !== false
         };
         var yun = r.dayun.yun[state.dayunIdx] || r.dayun.yun[0];
         var dyGan = yun ? yun.gz.charAt(0) : null, dyZhi = yun ? yun.gz.charAt(1) : null;
@@ -5347,8 +5353,9 @@ function GetGX(tg, dz) {
         st.push('<p class="shenchips">' + ZHI.map(function (z) {
             return '<span>' + z + '=' + shenTag(a.table[z]) + '</span>';
         }).join('') + '</p>');
-        st.push('<p class="muted">日柱空 ' + esc(a.dayKong.join('、') || '无') + ' · 年柱空 ' + esc(a.yearKong.join('、') || '无')
-            + '(落在空亡支上的字已按变神表变换;胎/身/命宫在原盘下兼看日柱空)</p>');
+        st.push('<p class="muted">日柱空 ' + esc(a.dayKong.join('、') || '无')
+            + ' · 年柱空 ' + esc(a.yearKong.join('、') || '无') + (a.useYearKong ? '' : '(未启用)')
+            + '(落在空亡支上的字已按变神表变换;胎/身/命宫只在原盘下变)</p>');
 
         // 大运干/支落神(看大运/看流年)
         var dy = '';
@@ -5586,7 +5593,8 @@ function GetGX(tg, dz) {
             if (!state.r) { return; }
             var html = buildGods12({
                 r: state.r, view: state.view, dayunIdx: state.dayunIdx,
-                liunianGan: $('lnGan').value, liunianZhi: $('lnZhi').value
+                liunianGan: $('lnGan').value, liunianZhi: $('lnZhi').value,
+                useYearKong: $('useYearKong').checked
             });
             $('secStart').innerHTML = html.secStart;
             $('secDySpirit').innerHTML = html.secDySpirit;
@@ -5616,6 +5624,7 @@ function GetGX(tg, dz) {
         $('tabLiunian').addEventListener('click', function () { switchView('liunian'); });
         $('lnGan').addEventListener('change', renderGods);
         $('lnZhi').addEventListener('change', renderGods);
+        $('useYearKong').addEventListener('change', renderGods);
 
         // 排盘(提交按钮与 URL 参数初始化共用)
         function doPaipan() {
