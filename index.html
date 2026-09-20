@@ -67,6 +67,14 @@ tr.boundary td { background: #f8f9fb; }
 .tag.plain { background: #ececec; color: #666; }
 a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb; text-decoration: none; }
 a.jump:hover { text-decoration: underline; }
+/* 流年/流月/流日下钻 */
+.clk { cursor: pointer; }
+th.clk:hover, tr.clk:hover td { background: #eef3fa; }
+th.clk.sel { background: #4a7ebb; color: #fff; }
+tr.clk.sel td { background: #e3ecf7; }
+.drill-title { margin: 10px 0 6px; }
+.days-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.day-cell { border: 1px solid #e0e0e0; border-radius: 4px; padding: 2px 6px; font-size: 12px; background: #fafbfc; }
 .via { color: #8a6d3b; font-size: 12px; }
 .bazi-big { font-size: 26px; font-weight: bold; letter-spacing: 6px; margin: 6px 0; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -118,6 +126,11 @@ footer { margin: 18px 0 8px; }
 .pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
 .pan3row .gz3 { font-size: 26px; font-weight: bold; min-width: 40px; text-align: center; }
 .pan3row .gz3s { font-size: 18px; font-weight: bold; min-width: 64px; text-align: center; }
+
+/* 十二神页面: 七柱十二神横排三行(与命盘 pan3row 同风格,每格字上标注下) */
+.pan3row.qz3row { align-items: flex-start; }
+.qz3cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 76px; }
+.qz3cell .qzann { font-size: 12px; color: #666; margin-top: 2px; white-space: nowrap; }
 
 </style>
 </head>
@@ -176,7 +189,18 @@ footer { margin: 18px 0 8px; }
     <section><h2>四柱</h2><div id="secPillars"></div></section>
     <section class="feature"><h2>节令口径 <small>启用盲派排盘技法时显示纬度调整月令过程</small></h2><div id="secJieqi"></div></section>
     <section><h2>胎元 / 命宫 / 身宫</h2><div id="secPalaces"></div></section>
-    <section><h2>大运</h2><div id="secDayun"></div></section>
+    <section><h2>大运 <small>点运柱下钻:流年 → 流月 → 流日</small></h2><div id="secDayun"></div>
+      <div id="drillBox" style="display:none">
+        <p class="drill-title">节令口径:
+          <label class="inline"><input type="radio" name="jqlocal" value="local" checked> 本地实际节令(纬度调月令)</label>
+          <label class="inline"><input type="radio" name="jqlocal" value="national"> 全国统一节气</label>
+          <span class="muted">起运公历时间为近似换算(出生时间+起运岁数),标"约"</span>
+        </p>
+        <div id="secDrillY"></div>
+        <div id="secDrillM"></div>
+        <div id="secDrillD"></div>
+      </div>
+    </section>
     <section><h2>刑冲合害</h2><div id="secGX"></div></section>
     <section><h2>神煞</h2><div id="secShensha"></div></section>
     <section><h2>五行阴阳统计</h2><div id="secStat"></div></section>
@@ -4478,6 +4502,197 @@ function GetGX(tg, dz) {
 }));
 
 </script>
+<script>/* ==== src/engine/liunian.js ==== */
+/**
+ * 流年 / 流月 / 流日 下钻引擎
+ *
+ * 口径(已确认):
+ *   - 流年/流月界限: 默认按本地实际节令(纬度调月令,复用 localjq.getYearJieqi),
+ *     开关可切到全国统一节气(calendar.GetAdjustedJQ 天文节气时刻);
+ *   - 流年/流月的干支本身固定(流年按 (Y-4)%60,流月按流年干五虎遁正月起寅),
+ *     本地/全国只影响交界日期,不影响干支;
+ *   - 流日: 逐日干支,全国统一(日柱不受节气影响),用 calendar 日柱算法;
+ *   - 起运公历时间(近似): 出生公历 + 起运岁数(X岁Y个月),UI 标注"约"。
+ *
+ * 本模块只出干支列表,不含十二神(十二神在 gods12 模块)。
+ *
+ * 用法:
+ *   Node:   var Liunian = require("./engine/liunian.js"); var ln = new Liunian(cal, localjq);
+ *   浏览器: 先引 calendar.js / localjq.js 再引本文件,后 new Liunian(cal, localjq);
+ *   var r = Paipan.computeFull({...});
+ *   ln.liunianList(r, true)         => 各大运的流年列表(本地口径)
+ *   ln.liuyueList(r, 1987, true)    => 1987年12节气月
+ *   ln.liuriList(r, 1987, 0, true)  => 寅月逐日干支
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./calendar.js'), require('./localjq.js'));
+    } else {
+        root.Liunian = factory(root.Calendar, root.LocalJQ);
+    }
+}(typeof self !== 'undefined' ? self : this, function (Calendar, LocalJQ) {
+    'use strict';
+
+    // 12个节的顺序(寅月起)及其在 GetAdjustedJQ 序列中的位置[年份偏移,下标]
+    // (GAJQ(Y) 自春分Y年起;立春/惊蛰在上一回归年序列)
+    var JIE_POS = [[-1, 21], [-1, 23], [0, 1], [0, 3], [0, 5], [0, 7], [0, 9], [0, 11], [0, 13], [0, 15], [0, 17], [0, 19]];
+
+    /**
+     * @param Calendar cal 历法底座实例
+     * @param LocalJQ localjq 纬度调月令引擎
+     */
+    function Liunian(cal, localjq) {
+        this.cal = cal || new Calendar();
+        this.localjq = localjq || new LocalJQ(this.cal);
+    }
+
+    /**
+     * 起运公历时间(近似换算,UI 标注"约"): 出生公历 + 起运岁数(X岁Y个月),月超12进位1年
+     * @param object r computeFull 输出
+     * @return {year, month, text}
+     */
+    Liunian.prototype.qiyunDate = function (r) {
+        var s = r.dayun.start;
+        var y = r.input.year + s.sui;
+        var m = r.input.month + s.months;
+        if (m > 12) {
+            m -= 12;
+            y += 1;
+        }
+        return { year: y, month: m, text: '约' + y + '年' + m + '月' };
+    };
+
+    /**
+     * 某公历年的立春交界
+     * @param bool useLocal true=本地实际节令(纬度调月令) false=全国统一节气时刻
+     * @return {solar:[y,m,d], time:'HH:MM'(仅全国), lunar:text(仅本地)}
+     */
+    Liunian.prototype.lichunOf = function (r, year, useLocal) {
+        var cal = this.cal;
+        if (useLocal) {
+            var lc = this.localjq.getYearJieqi(year, r.lat.rounded).valid[0]; // 本地立春
+            return { solar: lc.solar, lunar: lc.lunar.text };
+        }
+        var t = cal.Jtime(cal.GetAdjustedJQ(year - 1, false)[21]); // 全国立春天文时刻(北京时)
+        return { solar: [t[0], t[1], t[2]], time: ('0' + t[3]).slice(-2) + ':' + ('0' + t[4]).slice(-2) };
+    };
+
+    /**
+     * 所有大运的流年列表
+     * @param object r computeFull 输出
+     * @param bool useLocal 节令口径
+     * @return [{ idx, gz, sui, months, text, qiYunYear(约), liunian: [{year,code,gz,xuSui,lichun}] x10 }]
+     */
+    Liunian.prototype.liunianList = function (r, useLocal) {
+        var cal = this.cal;
+        var qy = this.qiyunDate(r);
+        var out = [];
+        for (var i = 0; i < r.dayun.yun.length; i++) {
+            var y = r.dayun.yun[i];
+            var startYear = qy.year + 10 * i;
+            var liunian = [];
+            for (var k = 0; k < 10; k++) {
+                var Y = startYear + k;
+                var code = ((Y - 4) % 60 + 60) % 60; // 流年干支(对年份固定)
+                liunian.push({
+                    year: Y,
+                    code: code,
+                    gz: cal.gz[code],
+                    xuSui: Y - r.input.year + 1, // 虚岁
+                    lichun: this.lichunOf(r, Y, useLocal)
+                });
+            }
+            out.push({
+                idx: i, gz: y.gz, sui: y.sui, months: y.months, text: y.text,
+                qiYunYear: startYear, qiYunText: '约' + startYear + '年' + qy.month + '月起',
+                liunian: liunian
+            });
+        }
+        return out;
+    };
+
+    /**
+     * 某流年(公历年Y,立春起算)的12个节气月
+     * 月支固定(立春寅月...小寒丑月),月干按流年干五虎遁正月起寅;交界日期按口径
+     * @return { year, yearGZ, useLocal, months: [{seq, name, zhiName, code, gz, from, to, fromText, toText, covered, coveredBy}] }
+     *   from 含该日,to 为下一节(不含);被覆盖的节 covered=true 且无 from/to
+     */
+    Liunian.prototype.liuyueList = function (r, year, useLocal) {
+        var cal = this.cal;
+        var yearCode = ((year - 4) % 60 + 60) % 60;
+        var nv = 2 + 12 * (yearCode % 10); // 五虎遁: 流年干起正月(寅月)
+        var months = [];
+        var seq, e, entry;
+        if (useLocal) {
+            var t = this.localjq.getYearJieqi(year, r.lat.rounded);
+            for (seq = 0; seq < 12; seq++) {
+                e = t.list[seq];
+                entry = {
+                    seq: seq, name: e.name, zhiName: e.zhiName,
+                    code: (seq + nv) % 60, gz: cal.gz[(seq + nv) % 60],
+                    covered: e.covered, coveredBy: e.coveredBy,
+                    from: null, to: null
+                };
+                if (!e.covered) {
+                    for (var vi = 0; vi < t.valid.length; vi++) { // 在存活表中找下一节作区间末
+                        if (t.valid[vi] === e) {
+                            entry.from = e.solar;
+                            entry.fromLunar = e.lunar.text;
+                            entry.to = t.valid[vi + 1].solar;
+                            entry.toLunar = t.valid[vi + 1].lunar.text;
+                            break;
+                        }
+                    }
+                }
+                months.push(entry);
+            }
+        } else {
+            var jdPrev = cal.GetAdjustedJQ(year - 1, false);
+            var jdCur = cal.GetAdjustedJQ(year, false);
+            for (seq = 0; seq < 12; seq++) {
+                var pos = JIE_POS[seq];
+                var jd = (pos[0] === -1 ? jdPrev : jdCur)[pos[1]];
+                var tt = cal.Jtime(jd);
+                var nx = (seq < 11) ? cal.Jtime((JIE_POS[seq + 1][0] === -1 ? jdPrev : jdCur)[JIE_POS[seq + 1][1]])
+                                    : cal.Jtime(jdCur[21]); // 次年立春
+                months.push({
+                    seq: seq, name: cal.jq[pos[1]], zhiName: cal.cdz[(seq + 2) % 12],
+                    code: (seq + nv) % 60, gz: cal.gz[(seq + nv) % 60],
+                    covered: false, coveredBy: null,
+                    from: [tt[0], tt[1], tt[2]], fromTime: ('0' + tt[3]).slice(-2) + ':' + ('0' + tt[4]).slice(-2),
+                    to: [nx[0], nx[1], nx[2]], toTime: ('0' + nx[3]).slice(-2) + ':' + ('0' + nx[4]).slice(-2)
+                });
+            }
+        }
+        return { year: year, yearGZ: cal.gz[yearCode], useLocal: useLocal, months: months };
+    };
+
+    /**
+     * 某节气月的逐日干支(全国统一,日柱不受节气影响)
+     * @param int jieqiIdx liuyueList months 的下标(0=寅月...11=丑月)
+     * @return { month, covered, days: [{solar:[y,m,d], gz}] }
+     */
+    Liunian.prototype.liuriList = function (r, year, jieqiIdx, useLocal) {
+        var cal = this.cal;
+        var m = this.liuyueList(r, year, useLocal).months[jieqiIdx];
+        if (!m || m.covered) {
+            return { month: m || null, covered: true, days: [] };
+        }
+        var days = [];
+        var jd0 = cal.Jdays(m.from[0], m.from[1], m.from[2], 12, 0, 0);
+        var jd1 = cal.Jdays(m.to[0], m.to[1], m.to[2], 12, 0, 0);
+        for (var jd = jd0; jd < jd1; jd++) {
+            var tt = cal.Jtime(jd);
+            var g = cal.GetGZ(tt[0], tt[1], tt[2], 12, 0, 0); // 正午取日柱
+            days.push({ solar: [tt[0], tt[1], tt[2]], gz: cal.gz[cal.GZ(g[0][2], g[1][2])] });
+        }
+        return { month: m, covered: false, days: days };
+    };
+
+    return Liunian;
+}));
+
+</script>
 <script>/* ==== src/ui/app.js ==== */
 /**
  * 排盘 UI(纯原生,无外部库)
@@ -4486,14 +4701,15 @@ function GetGX(tg, dz) {
  */
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'));
+        module.exports = factory(require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('../engine/liunian.js'));
     } else {
-        root.PaipanUI = factory(root.Paipan, root.Geo, root.Calendar);
+        root.PaipanUI = factory(root.Paipan, root.Geo, root.Calendar, root.Liunian);
     }
-}(typeof self !== 'undefined' ? self : this, function (Paipan, Geo, Calendar) {
+}(typeof self !== 'undefined' ? self : this, function (Paipan, Geo, Calendar, Liunian) {
     'use strict';
 
     var cal = Paipan.cal || new Calendar();
+    var liunian = new Liunian(cal); // 流年/流月/流日引擎
     var ZHU = ['年', '月', '日', '时'];
     var WX_COLOR = { '金': '#b8860b', '水': '#3a6ea5', '木': '#3d8b37', '火': '#c0392b', '土': '#8d6e4a' };
 
@@ -4617,8 +4833,75 @@ function GetGX(tg, dz) {
             + ';再加出生月(' + d.birthOrder + ' 月)' + (d.monthCarry ? ',月数超12进1岁' : '')
             + ' ⇒ <b>' + esc(d.start.text) + '</b></td></tr>');
         L.push('</tbody></table>');
-        L.push('<table><tr><th>大运</th>' + d.yun.map(function (y) { return '<th class="gz">' + y.gz + '</th>'; }).join('') + '</tr>'
+        // 运柱可点击,下钻流年/流月/流日
+        L.push('<table><tr><th>大运</th>' + d.yun.map(function (y, i) { return '<th class="gz clk" data-i="' + i + '">' + y.gz + '</th>'; }).join('') + '</tr>'
             + '<tr><th>起运</th>' + d.yun.map(function (y) { return '<td>' + y.sui + '岁' + y.months + '个月</td>'; }).join('') + '</tr></table>');
+        return L.join('');
+    }
+
+    /* ===== 流年/流月/流日 下钻(纯构建函数) ===== */
+
+    function fmtD(a) { return a[0] + '-' + a[1] + '-' + a[2]; }
+
+    // 第1层: 某步大运的10个流年
+    function buildDrillLiunian(r, yunIdx, useLocal) {
+        var y = liunian.liunianList(r, useLocal)[yunIdx];
+        if (!y) {
+            return '';
+        }
+        var L = [];
+        L.push('<p class="drill-title">大运 <b>' + y.gz + '</b>(' + y.sui + '岁' + y.months + '个月起,' + y.qiYunText
+            + ') <span class="muted">点流年看流月</span></p>');
+        L.push('<table><tr><th>流年</th><th>干支</th><th>虚岁</th><th>立春交界(' + (useLocal ? '本地实际节令' : '全国统一节气') + ')</th></tr>');
+        y.liunian.forEach(function (n) {
+            var boundary = useLocal
+                ? (fmtD(n.lichun.solar) + ' <span class="muted">(' + esc(n.lichun.lunar) + ')</span>')
+                : (fmtD(n.lichun.solar) + ' ' + n.lichun.time);
+            L.push('<tr class="clk" data-year="' + n.year + '"><td>' + n.year + ' 年</td><td class="gz">' + n.gz + '</td>'
+                + '<td>' + n.xuSui + ' 岁</td><td>' + boundary + '</td></tr>');
+        });
+        L.push('</table>');
+        return L.join('');
+    }
+
+    // 第2层: 某流年的12个节气月
+    function buildDrillLiuyue(r, year, useLocal) {
+        var ly = liunian.liuyueList(r, year, useLocal);
+        var L = [];
+        L.push('<p class="drill-title">流年 <b>' + year + ' ' + ly.yearGZ + '</b> <span class="muted">点流月看流日;被覆盖的节令跳月已标注</span></p>');
+        L.push('<table><tr><th>节气月</th><th>干支</th><th>日期范围</th><th>备注</th></tr>');
+        ly.months.forEach(function (m) {
+            if (m.covered) {
+                L.push('<tr class="covered"><td>' + m.name + '(' + m.zhiName + '月)</td><td class="gz">' + m.gz + '</td>'
+                    + '<td>—</td><td><span class="tag cover">被' + esc(m.coveredBy) + '覆盖,无' + m.zhiName + '月</span></td></tr>');
+            } else {
+                var range = fmtD(m.from) + ' ~ ' + fmtD(m.to) + '(不含)';
+                if (useLocal && m.fromLunar) {
+                    range += ' <span class="muted">' + esc(m.fromLunar) + '起</span>';
+                }
+                if (!useLocal && m.fromTime) {
+                    range = fmtD(m.from) + ' ' + m.fromTime + ' ~ ' + fmtD(m.to) + ' ' + m.toTime;
+                }
+                L.push('<tr class="clk" data-jieqi="' + m.seq + '"><td>' + m.name + '(' + m.zhiName + '月)</td>'
+                    + '<td class="gz">' + m.gz + '</td><td>' + range + '</td><td></td></tr>');
+            }
+        });
+        L.push('</table>');
+        return L.join('');
+    }
+
+    // 第3层: 某节气月逐日干支
+    function buildDrillLiuri(r, year, jieqiIdx, useLocal) {
+        var lr = liunian.liuriList(r, year, jieqiIdx, useLocal);
+        if (lr.covered || !lr.days.length) {
+            return '<p class="muted">该节令被覆盖,无此月。</p>';
+        }
+        var m = lr.month;
+        var L = [];
+        L.push('<p class="drill-title">流月 <b>' + year + ' ' + m.gz + '月</b>(' + m.name + '起,' + fmtD(m.from) + ' ~ ' + fmtD(m.to) + '不含,共' + lr.days.length + '天)</p>');
+        L.push('<div class="days-grid">' + lr.days.map(function (d) {
+            return '<span class="day-cell"><span class="muted">' + d.solar[1] + '-' + d.solar[2] + '</span> ' + d.gz + '</span>';
+        }).join('') + '</div>');
         return L.join('');
     }
 
@@ -4871,6 +5154,76 @@ function GetGX(tg, dz) {
             }
             $('result').style.display = '';
             updateGods12Link(lastPlace);
+            initDrill(r);
+        });
+
+        /* ===== 流年/流月/流日 下钻 ===== */
+        // 状态: 选中大运/流年/流月 + 节令口径(默认跟随排盘口径: 盲派=本地,否则全国)
+        var drill = { r: null, yunIdx: -1, year: null, jieqiIdx: null, useLocal: true };
+
+        function renderDrill() {
+            var box = $('drillBox');
+            if (!box) {
+                return;
+            }
+            if (!drill.r || drill.yunIdx < 0) {
+                box.style.display = 'none';
+                return;
+            }
+            box.style.display = '';
+            $('secDrillY').innerHTML = buildDrillLiunian(drill.r, drill.yunIdx, drill.useLocal);
+            $('secDrillM').innerHTML = (drill.year !== null) ? buildDrillLiuyue(drill.r, drill.year, drill.useLocal) : '';
+            $('secDrillD').innerHTML = (drill.year !== null && drill.jieqiIdx !== null) ? buildDrillLiuri(drill.r, drill.year, drill.jieqiIdx, drill.useLocal) : '';
+            // 运柱选中态
+            Array.prototype.forEach.call(doc.querySelectorAll('#secDayun .clk[data-i]'), function (el) {
+                el.className = el.className.replace(/ sel/g, '') + (parseInt(el.getAttribute('data-i'), 10) === drill.yunIdx ? ' sel' : '');
+            });
+        }
+
+        function initDrill(r) {
+            drill.r = r;
+            drill.yunIdx = -1;
+            drill.year = null;
+            drill.jieqiIdx = null;
+            drill.useLocal = !r.technique || r.technique.blindPaipanTechnique; // 默认跟随排盘口径(默认本地)
+            var radios = doc.querySelectorAll('input[name=jqlocal]');
+            Array.prototype.forEach.call(radios, function (rd) {
+                rd.checked = (rd.value === (drill.useLocal ? 'local' : 'national'));
+            });
+            renderDrill();
+        }
+
+        // 事件: 点大运柱 -> 流年; 点流年行 -> 流月; 点流月行 -> 流日; 口径切换重算
+        doc.addEventListener('click', function (ev) {
+            var t = ev.target;
+            while (t && !t.getAttribute) { t = t.parentNode; }
+            if (!t) { return; }
+            var yunCell = t.closest ? t.closest('#secDayun .clk[data-i]') : null;
+            if (yunCell) {
+                drill.yunIdx = parseInt(yunCell.getAttribute('data-i'), 10);
+                drill.year = null;
+                drill.jieqiIdx = null;
+                renderDrill();
+                return;
+            }
+            var yRow = t.closest ? t.closest('#secDrillY tr.clk[data-year]') : null;
+            if (yRow) {
+                drill.year = parseInt(yRow.getAttribute('data-year'), 10);
+                drill.jieqiIdx = null;
+                renderDrill();
+                return;
+            }
+            var mRow = t.closest ? t.closest('#secDrillM tr.clk[data-jieqi]') : null;
+            if (mRow) {
+                drill.jieqiIdx = parseInt(mRow.getAttribute('data-jieqi'), 10);
+                renderDrill();
+            }
+        });
+        Array.prototype.forEach.call(doc.querySelectorAll('input[name=jqlocal]'), function (rd) {
+            rd.addEventListener('change', function () {
+                drill.useLocal = (rd.value === 'local');
+                renderDrill(); // 交界日期按新口径重算
+            });
         });
 
         // "串宫押运十二神 →"跳转链接: 带上本次排盘参数(URL hash),目标页区分开发版/成品
@@ -4915,6 +5268,7 @@ function GetGX(tg, dz) {
         buildAll: buildAll,
         buildBasic: buildBasic, buildPillars: buildPillars, buildJieqi: buildJieqi,
         buildPalaces: buildPalaces, buildDayun: buildDayun, buildGX: buildGX, buildShensha: buildShensha, buildStat: buildStat,
+        buildDrillLiunian: buildDrillLiunian, buildDrillLiuyue: buildDrillLiuyue, buildDrillLiuri: buildDrillLiuri,
         bind: bind
     };
 }));
