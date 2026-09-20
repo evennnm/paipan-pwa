@@ -67,6 +67,14 @@ tr.boundary td { background: #f8f9fb; }
 .tag.plain { background: #ececec; color: #666; }
 a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb; text-decoration: none; }
 a.jump:hover { text-decoration: underline; }
+/* 流年/流月/流日下钻 */
+.clk { cursor: pointer; }
+th.clk:hover, tr.clk:hover td { background: #eef3fa; }
+th.clk.sel { background: #4a7ebb; color: #fff; }
+tr.clk.sel td { background: #e3ecf7; }
+.drill-title { margin: 10px 0 6px; }
+.days-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.day-cell { border: 1px solid #e0e0e0; border-radius: 4px; padding: 2px 6px; font-size: 12px; background: #fafbfc; }
 .via { color: #8a6d3b; font-size: 12px; }
 .bazi-big { font-size: 26px; font-weight: bold; letter-spacing: 6px; margin: 6px 0; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -118,6 +126,11 @@ footer { margin: 18px 0 8px; }
 .pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
 .pan3row .gz3 { font-size: 26px; font-weight: bold; min-width: 40px; text-align: center; }
 .pan3row .gz3s { font-size: 18px; font-weight: bold; min-width: 64px; text-align: center; }
+
+/* 十二神页面: 七柱十二神横排三行(与命盘 pan3row 同风格,每格字上标注下) */
+.pan3row.qz3row { align-items: flex-start; }
+.qz3cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 76px; }
+.qz3cell .qzann { font-size: 12px; color: #666; margin-top: 2px; white-space: nowrap; }
 
 </style>
 </head>
@@ -5373,25 +5386,41 @@ function GetGX(tg, dz) {
             dy += '</table>';
         }
 
-        // 七柱表
-        var byPillar = [];
-        var idx = {};
-        a.qizhu.forEach(function (it) {
-            if (!(it.label in idx)) {
-                idx[it.label] = byPillar.length;
-                byPillar.push({ label: it.label, gan: null, zhi: null });
+        // 七柱十二神: 横排三行(与命盘 pan3row 同风格)——天干行/地支行/胎命身行
+        function qfind(label, kind) {
+            for (var i = 0; i < a.qizhu.length; i++) {
+                if (a.qizhu[i].label === label && a.qizhu[i].kind === kind) { return a.qizhu[i]; }
             }
-            byPillar[idx[it.label]][it.kind === '干' ? 'gan' : 'zhi'] = it;
-        });
-        var qz = '<table><tr><th>柱</th><th>天干(通支)</th><th>落神</th><th>地支</th><th>落神</th></tr>';
-        byPillar.forEach(function (c) {
-            qz += '<tr><th>' + esc(c.label) + '</th>'
-                + '<td class="gz">' + (c.gan ? esc(c.gan.char) + ' <span class="via">通' + esc(c.gan.lookup) + '</span>' : '') + '</td>'
-                + '<td>' + (c.gan ? spiritHtml(c.gan) : '') + '</td>'
-                + '<td class="gz">' + (c.zhi ? esc(c.zhi.char) : '') + '</td>'
-                + '<td>' + (c.zhi ? spiritHtml(c.zhi) : '') + '</td></tr>';
-        });
-        qz += '</table>';
+            return null;
+        }
+        function ganCell(it) { // 天干: 大字(五行色) + 通支·落神小字
+            return '<span class="qz3cell"><span class="gz3">' + wxChar(it.char, true) + '</span>'
+                + '<span class="qzann"><span class="via">通' + esc(it.lookup) + '</span>·' + spiritHtml(it) + '</span></span>';
+        }
+        function zhiCell(it) { // 地支: 大字(五行色) + 落神小字
+            return '<span class="qz3cell"><span class="gz3">' + wxChar(it.char, false) + '</span>'
+                + '<span class="qzann">' + spiritHtml(it) + '</span></span>';
+        }
+        function palCell(name, gIt, zIt) { // 胎/身/命: 干支(五行色) + 干落神·支落神小字
+            var ann = (gIt ? esc(gIt.char) + '→' + spiritHtml(gIt) : '')
+                + ' ' + (zIt ? esc(zIt.char) + '→' + spiritHtml(zIt) : '');
+            return '<span class="qz3cell"><span class="gz3s"><span class="muted">' + esc(name) + '</span> '
+                + wxGZ((gIt ? gIt.char : '') + (zIt ? zIt.char : '')) + '</span>'
+                + '<span class="qzann">' + ann + '</span></span>';
+        }
+        var ZHU4 = ['年柱', '月柱', '日柱', '时柱'];
+        var PAL3 = ['胎元', '身宫', '命宫'];
+        var qz = '<div class="pan3row qz3row"><span class="pan3label">天干</span>' + ZHU4.map(function (lb) {
+            var it = qfind(lb, '干');
+            return it ? ganCell(it) : '';
+        }).join('') + '</div>';
+        qz += '<div class="pan3row qz3row"><span class="pan3label">地支</span>' + ZHU4.map(function (lb) {
+            var it = qfind(lb, '支');
+            return it ? zhiCell(it) : '';
+        }).join('') + '</div>';
+        qz += '<div class="pan3row qz3row"><span class="pan3label">胎命身</span>' + PAL3.map(function (lb) {
+            return palCell(lb, qfind(lb, '干'), qfind(lb, '支'));
+        }).join('') + '</div>';
         // 日支十二神性格(L1867-1885)
         var dzItem = null;
         a.qizhu.forEach(function (it) { if (it.label === '日柱' && it.kind === '支') { dzItem = it; } });
