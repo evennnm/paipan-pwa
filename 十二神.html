@@ -58,7 +58,13 @@ section.feature { border-color: #4a7ebb; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: center; }
 th { background: #f0f3f7; }
+/* 四柱表: 走参考图的横向分隔线风格,去掉纵向网格线 */
+table.pan th, table.pan td { border-left: none; border-right: none; }
+table.pan th { background: none; text-align: right; color: #888; font-weight: normal; font-size: 12px; }
+table.pan thead th { background: #f0f3f7; color: inherit; font-weight: bold; text-align: center; }
 td.gz, td.big { font-size: 20px; font-weight: bold; }
+td.gzcell { font-size: 24px; font-weight: bold; }
+.gzcell .wxtag, td .wxtag { font-style: normal; font-size: 10px; font-weight: normal; color: #999; margin-left: 2px; vertical-align: super; }
 tr.covered td { color: #bbb; text-decoration: line-through; }
 tr.boundary td { background: #f8f9fb; }
 .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
@@ -68,13 +74,28 @@ tr.boundary td { background: #f8f9fb; }
 a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb; text-decoration: none; }
 a.jump:hover { text-decoration: underline; }
 /* 流年/流月/流日下钻 */
-.clk { cursor: pointer; }
-th.clk:hover, tr.clk:hover td { background: #eef3fa; }
-th.clk.sel { background: #4a7ebb; color: #fff; }
-tr.clk.sel td { background: #e3ecf7; }
 .drill-title { margin: 10px 0 6px; }
+/* 大运/流年/流月 卡片流(参考问真八字: 横向一行,卡内竖排 年/干支/十神) */
+.strip { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 2px 0 6px; }
+.scard { flex: 0 1 auto; min-width: 76px; border: 1px solid #e0e0e0; border-radius: 6px;
+  padding: 5px 8px; text-align: center; background: #fff; }
+.scard .yr { font-size: 11px; color: #666; }
+.scard .age { font-size: 11px; color: #888; }
+.scard .gz { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
+.scard .ss { font-size: 11px; color: #666; }
+.scard .via { font-size: 10px; line-height: 1.35; }
+.scard.clk { cursor: pointer; }
+.scard.now { border-color: #c0392b; box-shadow: 0 0 0 1px #c0392b inset; }  /* 当前年 */
+.scard.clk:hover { border-color: #4a7ebb; background: #eef3fa; }
+.scard.sel { border-color: #4a7ebb; background: #eef3fa; box-shadow: 0 0 0 2px #4a7ebb inset; }
+.scard.covered { background: #fafafa; }
+.scard.covered .gz { color: #bbb; text-decoration: line-through; }
+.scard.covered .wx-mu, .scard.covered .wx-huo, .scard.covered .wx-tu, .scard.covered .wx-jin, .scard.covered .wx-shui { color: #bbb; }
 .days-grid { display: flex; flex-wrap: wrap; gap: 4px; }
 .day-cell { border: 1px solid #e0e0e0; border-radius: 4px; padding: 2px 6px; font-size: 12px; background: #fafbfc; }
+.day-cell.clk { cursor: pointer; }
+.day-cell.clk:hover { border-color: #4a7ebb; background: #eef3fa; }
+.day-cell.sel { border-color: #4a7ebb; background: #eef3fa; box-shadow: 0 0 0 2px #4a7ebb inset; }
 .via { color: #8a6d3b; font-size: 12px; }
 .bazi-big { font-size: 26px; font-weight: bold; letter-spacing: 6px; margin: 6px 0; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -100,6 +121,11 @@ footer { margin: 18px 0 8px; }
   .bazi-big { font-size: 20px; letter-spacing: 2px; }
   .card { min-width: 130px; padding: 8px 10px; }
   .via { font-size: 11px; }
+  .scard { min-width: 64px; padding: 4px 5px; }
+  .scard .gz { font-size: 17px; }
+  td.gzcell { font-size: 20px; }
+  table.pan th { font-size: 11px; }
+  #secShensha table { min-width: 640px; } /* 叠满 8 列时不被压扁,横向滑动看全 */
   .dropdown { left: 8px; right: 8px; min-width: 0; } /* 搜索下拉铺满手机宽度 */
 }
 
@@ -115,12 +141,14 @@ footer { margin: 18px 0 8px; }
 .card.dcard.sel { border-color: #4a7ebb; background: #eef3fa; box-shadow: 0 0 0 1px #4a7ebb inset; }
 .shenchips span { display: inline-block; margin: 2px 6px 2px 0; }
 
-/* 十二神页面: 命盘八字五行着色(色值同 app.js 五行统计条 WX_COLOR,与蓝白主题协调) */
+/* 五行着色(主盘与十二神页共用): 色值同 app.js 五行统计条 WX_COLOR,与蓝白主题协调 */
 .wx-mu { color: #3d8b37; }   /* 木 绿 */
 .wx-huo { color: #c0392b; }  /* 火 红 */
 .wx-tu { color: #8d6e4a; }   /* 土 土色 */
 .wx-jin { color: #b8860b; }  /* 金 金色 */
 .wx-shui { color: #3a6ea5; } /* 水 蓝 */
+/* 被覆盖的跳月整行置灰,干支不再抢色 */
+tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr.covered .wx-shui { color: #bbb; }
 /* 命盘三排(横排): 左侧小标签,右侧四字 flex 均匀横排,五行着色保留 */
 .pan3row { display: flex; align-items: baseline; gap: 8px 28px; margin: 6px 0; }
 .pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
@@ -3527,12 +3555,12 @@ footer { margin: 18px 0 8px; }
 
     /**
      * @param object r pillars.compute 的返回(用到 jieqi.valid, pillars, lunar, input)
-     * @param int count 排几步大运(默认8)
+     * @param int count 排几步大运(默认10)
      * @return 结构化结果,含数天数起止日、取舍明细、折算过程、运柱列表(结构见文件尾注释)
      */
     Dayun.prototype.compute = function (r, count) {
         var cal = this.cal;
-        count = count || 8;
+        count = count || 10;
 
         // 1. 顺逆: 年干阴阳 × 性别
         var yearTg = r.pillars.year.tg;
@@ -4125,11 +4153,13 @@ function GetGX(tg, dz) {
 
     /**
      * 刑冲合害关系清单(GetGX 结果转可读形式)
-     * @param array tg 四柱天干代码数组[年,月,日,时]
-     * @param array dz 四柱地支代码数组
+     * @param array tg 天干代码数组,元素顺序与 labels 一致(默认四柱[年,月,日,时])
+     * @param array dz 地支代码数组
+     * @param array labels 可选,柱位标签数组,如含大运/流年/流月/流日的 8 元素数组
      * @return array [{target:'天干'/'地支', text:'巳申合化水', positions:['年','月'], kind}]
      */
-    Relations.prototype.getGX = function (tg, dz) {
+    Relations.prototype.getGX = function (tg, dz, labels) {
+        var Z = labels || ZHU; // 可传入含大运/流年/流月/流日的柱位标签
         var raw = GetGX(tg, dz); // [天干关系列表, 地支关系列表],元素为 [位置map, GX规则]
         var out = [];
         for (var t = 0; t <= 1; t++) {
@@ -4139,7 +4169,7 @@ function GetGX(tg, dz) {
                 var pos = [];
                 for (var k in fd) {
                     if (fd.hasOwnProperty(k)) {
-                        pos.push(ZHU[k]);
+                        pos.push(Z[k]);
                     }
                 }
                 out.push({ target: GX_TARGET[gx[0]], text: gx[4], positions: pos, kind: gx[1] });
@@ -4245,16 +4275,17 @@ function GetGX(tg, dz) {
 /**
  * 神煞模块(公有领域标准口诀,规则表见下;释义为本人自写一句话)
  *
- * 查法分四类:
+ * 查法分四类(依据只取命盘年月日时四柱,目标可为四柱或追加的动态柱):
  *   1. 三合局神煞(驿马/桃花/华盖/将星/劫煞/灾煞/亡神): 以年支和日支各查一遍,命中任一即算;
- *   2. 日干神煞(天乙贵人/太极贵人/文昌/学堂/禄神/羊刃/金舆/红艳): 以日干查四柱地支;
- *   3. 年支神煞(孤辰/寡宿/天喜/红鸾): 以年支查四柱地支;
- *   4. 月支神煞(天德/月德): 以月支查,目标可为天干或地支,四柱干支中命中任一即算。
+ *   2. 日干神煞(天乙贵人/太极贵人/文昌/学堂/禄神/羊刃/金舆/红艳): 以日干查各柱地支;
+ *   3. 年支神煞(孤辰/寡宿/天喜/红鸾): 以年支查各柱地支;
+ *   4. 月支神煞(天德/月德): 以月支查,目标可为天干或地支,各柱干支中命中任一即算。
  *
  * 用法:
  *   Node:   var Shensha = require("./engine/shensha.js"); var ss = new Shensha(cal);
  *   浏览器: 先引 calendar.js 再引本文件,后 new Shensha(cal);
- *   var r = Paipan.computeFull({...}); ss.compute(r) => 四柱各自命中的神煞(结构见文件尾注释)
+ *   var r = Paipan.computeFull({...}); ss.compute(r) => 四柱各自命中的神煞;
+ *   ss.compute(r, [{pos:'大运',tg,dz,code}]) => 追加动态柱各成一列,查法依据仍取命盘(结构见文件尾注释)
  */
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
@@ -4344,19 +4375,30 @@ function GetGX(tg, dz) {
     }
 
     /**
-     * 消费 computeFull 输出,查四柱神煞
+     * 消费 computeFull 输出,查各柱神煞
      * @param object r Paipan.computeFull 的返回(用到 pillars 的 tg/dz/code)
-     * @return { pillars: [{pos,gz,list:[{name,luck,desc,basis}]}...x4], total }
+     * @param array extra 可选,动态柱列表 [{pos:'大运', tg:干代码, dz:支代码, code:干支代码}...],
+     *                  按 大运/流年/流月/流日 顺序追加在四柱之后。动态柱只作被查对象,
+     *                  查法依据仍全部取命盘年支/月支/日支/日干(盲派惯例)。
+     * @return { pillars: [{pos,gz,dyn,list:[{name,luck,desc,basis}]}...x(4+extra.length)], total }
      */
-    Shensha.prototype.compute = function (r) {
+    Shensha.prototype.compute = function (r, extra) {
         var cal = this.cal;
         var P = r.pillars;
-        var tg = [P.year.tg, P.month.tg, P.day.tg, P.hour.tg];
-        var dz = [P.year.dz, P.month.dz, P.day.dz, P.hour.dz];
+        var keys = ['year', 'month', 'day', 'hour'];
+        var cols = keys.map(function (k, i) {
+            return { pos: ZHU[i], gz: cal.gz[P[k].code], tg: P[k].tg, dz: P[k].dz, dyn: false };
+        });
+        (extra || []).forEach(function (e) {
+            cols.push({ pos: e.pos, gz: e.gz || cal.gz[e.code], tg: e.tg, dz: e.dz, dyn: true });
+        });
+        var n = cols.length;
+        var tg = cols.map(function (c) { return c.tg; });
+        var dz = cols.map(function (c) { return c.dz; });
         var out = [];
         var total = 0;
-        for (var i = 0; i < 4; i++) {
-            out.push({ pos: ZHU[i], gz: cal.gz[P[['year', 'month', 'day', 'hour'][i]].code], list: [] });
+        for (var i = 0; i < n; i++) {
+            out.push({ pos: cols[i].pos, gz: cols[i].gz, dyn: cols[i].dyn, list: [] });
         }
         function hit(pillarIdx, name, basis) {
             var m = META[name];
@@ -4383,7 +4425,7 @@ function GetGX(tg, dz) {
             for (var s = 0; s < SANHE_RULES.length; s++) {
                 var rule = SANHE_RULES[s];
                 var target = rule.map[g];
-                for (var i1 = 0; i1 < 4; i1++) {
+                for (var i1 = 0; i1 < n; i1++) {
                     if (dz[i1] === target) {
                         hit(i1, rule.name, basisName + cal.cdz[basisZhi] + '查得' + cal.cdz[target]);
                     }
@@ -4396,7 +4438,7 @@ function GetGX(tg, dz) {
         for (var s2 = 0; s2 < GAN_RULES.length; s2++) {
             var rule2 = GAN_RULES[s2];
             var targets = rule2.map[dayGan];
-            for (var i2 = 0; i2 < 4; i2++) {
+            for (var i2 = 0; i2 < n; i2++) {
                 if (targets.indexOf(dz[i2]) >= 0) {
                     hit(i2, rule2.name, '日干' + cal.ctg[dayGan] + '查得' + cal.cdz[dz[i2]]);
                 }
@@ -4408,14 +4450,14 @@ function GetGX(tg, dz) {
         for (var s3 = 0; s3 < GUASU_RULES.length; s3++) {
             var rule3 = GUASU_RULES[s3];
             var t3 = rule3.map[sg];
-            for (var i3 = 0; i3 < 4; i3++) {
+            for (var i3 = 0; i3 < n; i3++) {
                 if (dz[i3] === t3) {
                     hit(i3, rule3.name, '年支' + cal.cdz[yearZhi] + '查得' + cal.cdz[t3]);
                 }
             }
         }
         var tx = TIANXI[yearZhi], hl = HONGLUAN[yearZhi];
-        for (var i4 = 0; i4 < 4; i4++) {
+        for (var i4 = 0; i4 < n; i4++) {
             if (dz[i4] === tx) {
                 hit(i4, '天喜', '年支' + cal.cdz[yearZhi] + '查得' + cal.cdz[tx]);
             }
@@ -4424,10 +4466,10 @@ function GetGX(tg, dz) {
             }
         }
 
-        // 4. 月支神煞: 目标可为天干或地支,四柱干支中命中任一即算
+        // 4. 月支神煞: 目标可为天干或地支,各柱干支中命中任一即算
         var monthZhi = dz[1];
         var td = TIANDE[monthZhi], yd = YUEDE[SANHE_GROUP[monthZhi]];
-        for (var i5 = 0; i5 < 4; i5++) {
+        for (var i5 = 0; i5 < n; i5++) {
             if (cal.ctg[tg[i5]] === td || cal.cdz[dz[i5]] === td) {
                 hit(i5, '天德', '月支' + cal.cdz[monthZhi] + '查得' + td);
             }
@@ -4445,7 +4487,7 @@ function GetGX(tg, dz) {
 /**
  * compute 返回结构:
  * {
- *   pillars: [{ pos:'年', gz:'丁巳', list:[{ name:'禄神', luck:'吉', desc:'...', basis:'日干戊查得巳' }] }, x4],
+ *   pillars: [{ pos:'年', gz:'丁巳', dyn:false, list:[{ name:'禄神', luck:'吉', desc:'...', basis:'日干戊查得巳' }] }, ...四柱(动态柱 dyn:true 追加在后)],
  *   total: int  // 命中总数
  * }
  */
@@ -4484,12 +4526,12 @@ function GetGX(tg, dz) {
     /**
      * 完整排盘
      * @param object opt 同 pillars.compute 的输入(year/month/day/hour/minute/second?/gender/city?/lat?/zwz?)
-     * @param int yunCount 大运步数(默认8)
+     * @param int yunCount 大运步数(默认10)
      * @return false|object pillars.compute 的结果,追加:
      *   palaces:   {taiyuan, minggong, shengong, trace}
      *   dayun:     {shun, dirText, birth, target, rawDays, totalDays, div3, birthOrder, start, yun}
      *   relations: {dayMaster, pillars(十神/藏干/长生/纳音/空亡), gx(刑冲合害), wuxing, yinyang, xunkong}
-     *   shensha:   {pillars: [{pos,gz,list:[{name,luck,desc,basis}]}], total}  // 神煞(吉/凶/中性)
+     *   shensha:   {pillars: [{pos,gz,dyn,list:[{name,luck,desc,basis}]}], total}  // 神煞(吉/凶/中性)
      */
     function computeFull(opt, yunCount) {
         var r = pp.compute(opt);
@@ -4497,7 +4539,7 @@ function GetGX(tg, dz) {
             return false;
         }
         r.palaces = pal.compute(r);
-        r.dayun = dy.compute(r, yunCount || 8);
+        r.dayun = dy.compute(r, yunCount || 10);
         r.relations = rel.annotate(r);
         r.shensha = ss.compute(r);
         return r;

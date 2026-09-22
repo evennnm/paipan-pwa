@@ -1,5 +1,5 @@
 /* 离线缓存 Service Worker: 页面 network-first(保证拿到最新),静态资源 cache-first */
-const CACHE = 'paipan-v3'; // 每次发布更新页面时递增此版本号,强制刷新缓存
+const CACHE = 'paipan-v4'; // 每次发布更新页面时递增此版本号,强制刷新缓存
 const ASSETS = [
   './',
   './index.html',
