@@ -235,6 +235,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
       <div id="secDySpirit"></div>
       <div id="secQizhu"></div>
       <div id="secCombo"></div>
+      <div id="secRules"></div>
     </section>
 
     <section>
@@ -4954,8 +4955,95 @@ function GetGX(tg, dz) {
     var GAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
     // 通字表(L4294-4296): 天干→地支
     var TONG = { '甲': '寅', '乙': '卯', '丙': '巳', '丁': '午', '戊': '戌', '己': '丑', '庚': '申', '辛': '酉', '壬': '亥', '癸': '子' };
+    var GAN_WX = { '甲': '木', '乙': '木', '丙': '火', '丁': '火', '戊': '土', '己': '土', '庚': '金', '辛': '金', '壬': '水', '癸': '水' };
+    var ZHI_WX = { '寅': '木', '卯': '木', '巳': '火', '午': '火', '申': '金', '酉': '金', '亥': '水', '子': '水', '辰': '土', '戌': '土', '丑': '土', '未': '土' };
+    var CHONG = [['子', '午'], ['丑', '未'], ['寅', '申'], ['卯', '酉'], ['辰', '戌'], ['巳', '亥']];
+    var CHUAN = [['子', '未'], ['丑', '午'], ['寅', '巳'], ['卯', '辰'], ['申', '亥'], ['酉', '戌']];
+    var JUE = [['子', '巳'], ['丑', '午'], ['寅', '酉'], ['卯', '申'], ['辰', '亥'], ['未', '戌']];
+    var LIUHE = [['子', '丑'], ['寅', '亥'], ['卯', '戌'], ['辰', '酉'], ['巳', '申'], ['午', '未']];
+    var XING = [['寅', '巳'], ['巳', '申'], ['寅', '申'], ['丑', '戌'], ['戌', '未'], ['丑', '未'], ['子', '卯'],
+        ['辰', '辰'], ['午', '午'], ['酉', '酉'], ['亥', '亥']];
+    var GRAVE_BY_WX = { '木': '未', '火': '戌', '金': '丑', '水': '辰' };
+    var TIMING_SLOTS = [
+        { target: '年干', span: '立春—春分', label: '春季前段' }, { target: '年支', span: '春分—立夏', label: '春季后段' },
+        { target: '月干', span: '立夏—夏至', label: '夏季前段' }, { target: '月支', span: '夏至—立秋', label: '夏季后段' },
+        { target: '日干', span: '立秋—秋分', label: '秋季前段' }, { target: '日支', span: '秋分—立冬', label: '秋季后段' },
+        { target: '时干', span: '立冬—冬至', label: '冬季前段' }, { target: '时支', span: '冬至—小寒', label: '冬季后段' }
+    ];
 
     function zhiIndex(z) { return ZHI.indexOf(z); }
+
+    function unique(arr) {
+        return (arr || []).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    }
+
+    function pairHas(table, a, b) {
+        return table.some(function (p) { return (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a); });
+    }
+
+    /** 新准则中的地支关系；刑表包含三刑任意两支，故半刑成立。 */
+    function branchRelation(a, b) {
+        if (zhiIndex(a) < 0 || zhiIndex(b) < 0) { return '无'; }
+        if (pairHas(CHONG, a, b)) { return '冲'; }
+        if (pairHas(XING, a, b)) { return '刑'; }
+        if (pairHas(CHUAN, a, b)) { return '穿'; }
+        if (pairHas(JUE, a, b)) { return '绝'; }
+        if (pairHas(LIUHE, a, b)) { return '六合'; }
+        return '无';
+    }
+
+    function graveBranch(zhi) {
+        return GRAVE_BY_WX[ZHI_WX[zhi]] || null;
+    }
+
+    function inverseTong(zhi) {
+        return GAN.filter(function (g) { return TONG[g] === zhi; });
+    }
+
+    /** 返回真空亡、假空亡及形成原因；不改变旧 kongwang 数组接口。 */
+    function kongwangDetail(gan, zhi) {
+        var truth = kongwangOf(gan, zhi) || [];
+        var fake = [], fakeStems = [], reasons = [];
+        truth.forEach(function (empty) {
+            inverseTong(empty).forEach(function (g) {
+                fakeStems.push(g);
+                reasons.push({ type: 'A', source: empty, target: g, text: '空亡支所通天干' });
+            });
+            var tomb = graveBranch(empty);
+            if (tomb) {
+                fake.push(tomb);
+                reasons.push({ type: 'E', source: empty, target: tomb, text: '空亡支墓库' });
+            }
+            ZHI.forEach(function (other) {
+                if (pairHas(LIUHE, empty, other)) {
+                    fake.push(other);
+                    reasons.push({ type: 'C', source: empty, target: other, text: '与空亡支六合' });
+                }
+            });
+        });
+        return {
+            sourceGan: gan || null, sourceZhi: zhi || null,
+            trueBranches: unique(truth), fakeBranches: unique(fake), fakeStems: unique(fakeStems),
+            branches: unique(truth.concat(fake)), reasons: reasons
+        };
+    }
+
+    function mergeKongDetails(details, source) {
+        var all = details || [];
+        return {
+            source: source,
+            trueBranches: unique(all.reduce(function (a, d) { return a.concat(d.trueBranches || []); }, [])),
+            fakeBranches: unique(all.reduce(function (a, d) { return a.concat(d.fakeBranches || []); }, [])),
+            fakeStems: unique(all.reduce(function (a, d) { return a.concat(d.fakeStems || []); }, [])),
+            branches: unique(all.reduce(function (a, d) { return a.concat(d.branches || []); }, [])),
+            reasons: all.reduce(function (a, d) { return a.concat(d.reasons || []); }, [])
+        };
+    }
+
+    function timingSlots() { return TIMING_SLOTS.map(function (x) { return { target: x.target, span: x.span, label: x.label }; }); }
+    function yearAllocation() {
+        return [{ pillar: '年柱', years: 3 }, { pillar: '月柱', years: 2 }, { pillar: '日柱', years: 2 }, { pillar: '时柱', years: 3 }];
+    }
 
     /**
      * 天干通地支(通字表 L4294-4296)
@@ -5064,6 +5152,141 @@ function GetGX(tg, dz) {
         return Data.CHANGE[shen] || null;
     }
 
+    function stemCombine(a, b) {
+        return [['甲', '己'], ['乙', '庚'], ['丙', '辛'], ['丁', '壬'], ['戊', '癸']].some(function (p) {
+            return (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a);
+        });
+    }
+
+    function branchCombine(a, b) { return pairHas(LIUHE, a, b); }
+
+    function tenGodGroup(dayGan, targetGan) {
+        var d = GAN.indexOf(dayGan), t = GAN.indexOf(targetGan);
+        if (d < 0 || t < 0) { return '其他'; }
+        if (GAN_WX[dayGan] === GAN_WX[targetGan]) { return '比劫'; }
+        var order = ['木', '火', '土', '金', '水'];
+        var di = order.indexOf(GAN_WX[dayGan]), ti = order.indexOf(GAN_WX[targetGan]);
+        if ((di + 1) % 5 === ti) { return '食伤'; }
+        if ((di + 2) % 5 === ti) { return '财'; }
+        if ((ti + 1) % 5 === di) { return '印'; }
+        if ((ti + 2) % 5 === di) { return '官'; }
+        return '其他';
+    }
+
+    function isTargetGroup(dayGan, char, kind) {
+        if (kind !== '干') { return false; }
+        var group = tenGodGroup(dayGan, char);
+        return group === '财' || group === '官' || group === '食伤';
+    }
+
+    function spiritFinal(shen, changed) {
+        return changed && SHEN.indexOf(changed.to) >= 0 ? changed.to
+            : (changed && changed.to === '丧门、吊客' ? '丧门' : shen);
+    }
+
+    function applyFlowChange(item, target, rule, reason, changes) {
+        if (!item) { return; }
+        var found = null;
+        for (var i = 0; i < changes.length; i++) {
+            if (changes[i].target === target) { found = changes[i]; break; }
+        }
+        if (found) {
+            if (found.rules.indexOf(rule) < 0) { found.rules.push(rule); }
+            found.reasons.push(reason);
+            return;
+        }
+        var to = changeOf(item.spirit);
+        if (!to) { return; }
+        var changed = { from: item.spirit, to: to, rules: [rule], reasons: [reason] };
+        item.changed = changed;
+        item.finalSpirit = spiritFinal(item.spirit, changed);
+        changes.push({ rule: rule, rules: [rule], target: target, from: item.spirit, to: to,
+            reason: reason, reasons: [reason] });
+    }
+
+    function strengthLevel(source, target) {
+        var s = source, t = target;
+        var order = ['木', '火', '土', '金', '水'];
+        var si = order.indexOf(s), ti = order.indexOf(t);
+        if (si < 0 || ti < 0) { return { level: '平', relation: '未知' }; }
+        if (si === ti) { return { level: '旺', relation: '同我' }; }
+        if ((si + 1) % 5 === ti) { return { level: '旺', relation: '生' }; }
+        if ((si + 2) % 5 === ti) { return { level: '弱', relation: '克' }; }
+        if ((ti + 1) % 5 === si) { return { level: '略弱', relation: '被生' }; }
+        return { level: '平', relation: '被克' };
+    }
+
+    function elementOf(char, isGan) { return (isGan ? GAN_WX : ZHI_WX)[char] || null; }
+
+    function strengthAnalysis(opt) {
+        var out = { dayun: {}, natal: {}, details: [] };
+        if (!opt || !opt.dayunZhi) { return out; }
+        var flowZhi = opt.liunianZhi;
+        if (flowZhi) {
+            if (opt.dayunGan) {
+                var dg = strengthLevel(elementOf(flowZhi, false), elementOf(opt.dayunGan, true));
+                out.dayun.gan = dg;
+                out.details.push({ target: '大运干', level: dg.level, relation: dg.relation, reason: '流年支' + flowZhi + '与大运干' + opt.dayunGan });
+            }
+            var dz = strengthLevel(elementOf(flowZhi, false), elementOf(opt.dayunZhi, false));
+            out.dayun.zhi = dz;
+            out.details.push({ target: '大运支', level: dz.level, relation: dz.relation, reason: '流年支' + flowZhi + '与大运支' + opt.dayunZhi });
+        }
+        var dayGan = opt.riGan || (opt.pillars.day && opt.pillars.day.gan);
+        if (dayGan) {
+            var z = opt.dayunZhi;
+            ['year', 'month', 'day', 'hour'].forEach(function (key) {
+                var p = opt.pillars[key];
+                if (!p) { return; }
+                ['gan', 'zhi'].forEach(function (kind) {
+                    var c = p[kind];
+                    var rel = strengthLevel(elementOf(z, false), elementOf(c, kind === 'gan'));
+                    out.natal[key + kind] = rel;
+                    out.details.push({ target: key + kind, level: rel.level, relation: rel.relation, reason: '大运支' + z + '与命局' + c });
+                });
+            });
+        }
+        return out;
+    }
+
+    function flowChanges(opt, base) {
+        var changes = [];
+        if (!opt || opt.mode !== 'liunian' || !opt.liunianZhi || !opt.dayunZhi || !base) { return changes; }
+        var dayunZhiItem = base.dayun && base.dayun.zhi;
+        var dayunGanItem = base.dayun && base.dayun.gan;
+        var rel = branchRelation(opt.liunianZhi, opt.dayunZhi);
+        if (rel === '刑' || rel === '冲' || rel === '穿' || rel === '绝') {
+            applyFlowChange(dayunZhiItem, '大运支', 'A', '流年支' + opt.liunianZhi + '与大运支' + opt.dayunZhi + '发生' + rel, changes);
+        }
+        if (graveBranch(opt.dayunZhi) === opt.liunianZhi) {
+            applyFlowChange(dayunZhiItem, '大运支', 'B', '流年支' + opt.liunianZhi + '为大运支' + opt.dayunZhi + '墓库', changes);
+        }
+        var dayGan = opt.riGan || (opt.pillars.day && opt.pillars.day.gan);
+        if (dayGan && dayunGanItem && isTargetGroup(dayGan, opt.dayunGan, '干') && !stemCombine(dayGan, opt.dayunGan)) {
+            applyFlowChange(dayunGanItem, '大运干', 'C', '大运干' + opt.dayunGan + '为日干' + dayGan + '的财官食伤', changes);
+        }
+        if (dayGan && base.qizhu) {
+            base.qizhu.forEach(function (item) {
+                if (isTargetGroup(dayGan, item.char, item.kind)) {
+                    var exempt = stemCombine(dayGan, item.char) || (item.pillar === 'day' && branchCombine(opt.pillars.day.zhi, item.host));
+                    if (!exempt) {
+                        applyFlowChange(item, item.label + item.kind + item.char, 'D', '命局' + item.label + item.kind + item.char + '为日干' + dayGan + '的财官食伤', changes);
+                    }
+                }
+            });
+        }
+        if (base.natalKongDetail && base.natalKongDetail.trueBranches && base.qizhu) {
+            base.qizhu.forEach(function (item) {
+                var trueEmpty = base.natalKongDetail.trueBranches.indexOf(item.host) >= 0;
+                if (trueEmpty) {
+                    var once = isTargetGroup(dayGan, item.char, item.kind);
+                    applyFlowChange(item, item.label + item.kind + item.char, 'E', '命局真空亡：' + item.host + '落' + item.spirit + (once ? '，财官食伤只变一次' : ''), changes);
+                }
+            });
+        }
+        return changes;
+    }
+
     /**
      * 核心分析
      * @param object opt
@@ -5100,24 +5323,46 @@ function GetGX(tg, dz) {
             return null;
         }
 
-        // 空亡:分日柱空/年柱空。传入优先(opt.dayKong/opt.yearKong;只给 opt.kongwang 则全部按日柱空,向后兼容);
-        // 否则自动算两柱空(文档例4 L2458 两柱空都参与)。
-        // 规则(用户确认,丙午大运例+例4):年柱空对七柱任何模式都生效;
-        // 日柱空对四柱任何模式生效,但对胎/身/命宫只在"日干起太岁(原局,rigan)"时生效。
+        // 空亡来源：原局沿用日柱/年柱；大运、流年有完整干支时改由该运/年干支定空亡。
+        // 旧 dayKong/yearKong/kongwang 参数仍优先，便于旧调用和历史命例复核。
         var dayKong = opt.dayKong, yearKong = opt.yearKong;
+        var kongDetail = null;
+        var natalKongDetail = mergeKongDetails([
+            opt.pillars.day ? kongwangDetail(opt.pillars.day.gan, opt.pillars.day.zhi) : null,
+            opt.pillars.year ? kongwangDetail(opt.pillars.year.gan, opt.pillars.year.zhi) : null
+        ].filter(Boolean), '命局日柱/年柱');
+        var applyFakeKong = false;
         if (!dayKong && !yearKong) {
             if (opt.kongwang) { // 兼容旧接口:全部当日柱空
                 dayKong = opt.kongwang; yearKong = [];
+                kongDetail = { source: '兼容输入', trueBranches: unique(opt.kongwang), fakeBranches: [], fakeStems: [], branches: unique(opt.kongwang), reasons: [] };
+            } else if (opt.mode === 'dayun' && opt.dayunGan && opt.dayunZhi) {
+                kongDetail = kongwangDetail(opt.dayunGan, opt.dayunZhi);
+                dayKong = kongDetail.branches; yearKong = [];
+                kongDetail.source = '大运' + opt.dayunGan + opt.dayunZhi;
+                applyFakeKong = true;
+            } else if (opt.mode === 'liunian' && opt.liunianGan && opt.liunianZhi) {
+                kongDetail = kongwangDetail(opt.liunianGan, opt.liunianZhi);
+                dayKong = kongDetail.branches; yearKong = [];
+                kongDetail.source = '流年' + opt.liunianGan + opt.liunianZhi;
+                applyFakeKong = true;
             } else {
                 dayKong = opt.pillars.day ? kongwangOf(opt.pillars.day.gan, opt.pillars.day.zhi) : [];
                 yearKong = opt.pillars.year ? kongwangOf(opt.pillars.year.gan, opt.pillars.year.zhi) : [];
+                kongDetail = natalKongDetail;
             }
         }
         dayKong = dayKong || []; yearKong = yearKong || [];
+        if (!kongDetail) {
+            kongDetail = { source: '显式输入', trueBranches: unique(dayKong.concat(yearKong)), fakeBranches: [], fakeStems: [], branches: unique(dayKong.concat(yearKong)), reasons: [] };
+        }
         // 年柱空可选(用户确认):useYearKong === false 时年柱空不参与变神;日柱空确定参与
         var useYearKong = opt.useYearKong !== false;
         var effYearKong = useYearKong ? yearKong : [];
         var kong = dayKong.concat(effYearKong).filter(function (v, i, a) { return a.indexOf(v) === i; }); // 合并展示用
+        if (applyFakeKong) {
+            kong = unique(kongDetail.branches);
+        }
         // 胎/身/命宫生效的空亡集合(黄金标准):只有原局(日干起太岁,rigan)时胎身命才变;
         // 大运/流年起太岁一律不变(用户确认;丙午大运例图里身命的"变"是错的)。
         var kong3 = (opt.mode === 'rigan')
@@ -5125,14 +5370,15 @@ function GetGX(tg, dz) {
             : [];
 
         // 逐字排:干查通支、支查自身;所在柱地支(host)落空亡集合则按变神表变换
-        function spiritOf(char, isGan, hostZhi, kongSet) {
+        function spiritOf(char, isGan, hostZhi, kongSet, kongMeta) {
             var lookup = isGan ? tongZhi(char) : char;
             if (!lookup) {
                 return null;
             }
             var spirit = spiritAt(start.zhi, lookup);
             var changed = null;
-            if (kongSet.indexOf(hostZhi) >= 0) {
+            var empty = kongSet.indexOf(hostZhi) >= 0 || (applyFakeKong && isGan && kongMeta && kongMeta.fakeStems.indexOf(char) >= 0);
+            if (empty) {
                 var to = changeOf(spirit);
                 if (to) {
                     changed = { from: spirit, to: to };
@@ -5162,13 +5408,13 @@ function GetGX(tg, dz) {
         for (var i = 0; i < cols.length; i++) {
             var c = cols[i];
             var is3 = (c.key === 'taiyuan' || c.key === 'shengong' || c.key === 'minggong'); // 胎/身/命宫
-            var kset = is3 ? kong3 : kong; // 胎身命:年柱空+(日干起才含日柱空);四柱:两柱空
+            var kset = is3 ? kong3 : kong; // 胎身命:原盘沿用旧口径;四柱使用当前模式空亡
             var pz = is3 ? (c.key === 'taiyuan' ? opt.taiyuan : (c.key === 'shengong' ? opt.shengong : opt.minggong)) : P[c.key];
             if (!pz || !pz.gan || !pz.zhi) {
                 continue;
             }
-            var g = spiritOf(pz.gan, true, pz.zhi, kset);  // 干以其所在柱支论空亡
-            var z = spiritOf(pz.zhi, false, pz.zhi, kset); // 支以自身论空亡
+            var g = spiritOf(pz.gan, true, pz.zhi, kset, kongDetail);  // 干以宿主支及假空亡所通干判断
+            var z = spiritOf(pz.zhi, false, pz.zhi, kset, kongDetail); // 支以自身论空亡
             if (g) {
                 qizhu.push({ pillar: c.key, label: c.label, kind: '干', char: pz.gan, host: pz.zhi,
                     lookup: g.lookup, spirit: g.spirit, changed: g.changed, finalSpirit: g.finalSpirit });
@@ -5184,14 +5430,14 @@ function GetGX(tg, dz) {
         if (opt.dayunGan || opt.dayunZhi) {
             dayun = { gan: null, zhi: null };
             if (opt.dayunGan && opt.dayunZhi) {
-                var dg = spiritOf(opt.dayunGan, true, opt.dayunZhi, kong); // 大运干落在大运支上
+                var dg = spiritOf(opt.dayunGan, true, opt.dayunZhi, kong, kongDetail); // 大运干落在大运支上
                 if (dg) {
                     dayun.gan = { char: opt.dayunGan, tong: dg.lookup, host: opt.dayunZhi,
                         spirit: dg.spirit, changed: dg.changed, finalSpirit: dg.finalSpirit };
                 }
             }
             if (opt.dayunZhi) {
-                var dz = spiritOf(opt.dayunZhi, false, opt.dayunZhi, kong);
+                var dz = spiritOf(opt.dayunZhi, false, opt.dayunZhi, kong, kongDetail);
                 if (dz) {
                     dayun.zhi = { char: opt.dayunZhi, host: opt.dayunZhi,
                         spirit: dz.spirit, changed: dz.changed, finalSpirit: dz.finalSpirit };
@@ -5210,19 +5456,24 @@ function GetGX(tg, dz) {
         if (dayun && dayun.zhi) {
             mains.push({ label: '大运支' + dayun.zhi.char + '(后五年)', shen: dayun.zhi.finalSpirit });
         }
-        for (var m = 0; m < mains.length; m++) {
-            for (var q = 0; q < qizhu.length; q++) {
-                var text = comboOf(mains[m].shen, qizhu[q].finalSpirit);
-                if (text) {
-                    combos.push({
-                        mainLabel: mains[m].label, main: mains[m].shen,
-                        pairLabel: qizhu[q].label + qizhu[q].kind + qizhu[q].char,
-                        pair: qizhu[q].finalSpirit,
-                        text: text
-                    });
+        if (opt.mode !== 'dayun') {
+            for (var m = 0; m < mains.length; m++) {
+                for (var q = 0; q < qizhu.length; q++) {
+                    var text = comboOf(mains[m].shen, qizhu[q].finalSpirit);
+                    if (text) {
+                        combos.push({
+                            mainLabel: mains[m].label, main: mains[m].shen,
+                            pairLabel: qizhu[q].label + qizhu[q].kind + qizhu[q].char,
+                            pair: qizhu[q].finalSpirit,
+                            text: text
+                        });
+                    }
                 }
             }
         }
+
+        var base = { dayun: dayun, qizhu: qizhu, kongwangDetail: kongDetail, natalKongDetail: natalKongDetail };
+        var changes = flowChanges(opt, base);
 
         return {
             mode: opt.mode,
@@ -5232,9 +5483,16 @@ function GetGX(tg, dz) {
             dayKong: dayKong,   // 日柱空(确定参与)
             yearKong: yearKong, // 年柱空原始值
             useYearKong: useYearKong, // 年柱空是否参与变神(可选开关)
+            kongwangDetail: kongDetail,
+            natalKongwangDetail: natalKongDetail,
             dayun: dayun,
             qizhu: qizhu,
-            combos: combos
+            combos: combos,
+            changes: changes,
+            timing: timingSlots(),
+            yearAllocation: yearAllocation(),
+            strength: strengthAnalysis(opt),
+            directReading: opt.mode === 'dayun'
         };
     }
 
@@ -5247,6 +5505,13 @@ function GetGX(tg, dz) {
         spiritAt: spiritAt,
         startFrom: startFrom,
         kongwangOf: kongwangOf,
+        branchRelation: branchRelation,
+        graveBranch: graveBranch,
+        kongwangDetail: kongwangDetail,
+        timingSlots: timingSlots,
+        yearAllocation: yearAllocation,
+        strengthAnalysis: strengthAnalysis,
+        flowChanges: flowChanges,
         resolveStart: resolveStart,
         comboOf: comboOf,
         changeOf: changeOf,
@@ -5374,6 +5639,46 @@ function GetGX(tg, dz) {
         return { gan: gz.charAt(0), zhi: gz.charAt(1) };
     }
 
+    function buildRules(a) {
+        var h = '<h2 style="margin-top:10px;">变化准则 <small>《12串宫变化准则》</small></h2>';
+        var kd = a.kongwangDetail || { source: '未知', trueBranches: [], fakeBranches: [], branches: [] };
+        h += '<p class="muted">空亡来源：' + esc(kd.source || '未知')
+            + ' · 真空亡：' + esc((kd.trueBranches || []).join('、') || '无')
+            + ' · 假空亡：' + esc((kd.fakeBranches || []).join('、') || '无') + '</p>';
+        h += '<table><tr><th>项目</th><th>结果</th></tr>';
+        h += '<tr><td>空亡规则</td><td>当前十二神按真/假空亡集合判断；合计：' + esc((kd.branches || []).join('、') || '无') + '</td></tr>';
+        h += '<tr><td>大运管年</td><td>' + (a.yearAllocation || []).map(function (x) {
+            return esc(x.pillar) + esc(x.years) + '年';
+        }).join('、') + '</td></tr>';
+        h += '<tr><td>流年时间定位</td><td>' + (a.timing || []).map(function (x) {
+            return esc(x.target) + '：' + esc(x.span);
+        }).join('；') + '</td></tr></table>';
+        if (a.directReading) {
+            h += '<p class="muted">大运口径：<b>单神直断，不取组合</b>（运干、运支分别判断）。</p>';
+        }
+        h += '<h3>流年变化</h3>';
+        if (a.changes && a.changes.length) {
+            h += '<table><tr><th>规则</th><th>目标</th><th>变化</th><th>原因</th></tr>';
+            h += a.changes.map(function (c) {
+                return '<tr><td>' + esc((c.rules || [c.rule]).join('、')) + '</td><td>' + esc(c.target)
+                    + '</td><td>' + esc(c.from) + '→' + esc(c.to) + '</td><td style="text-align:left;">'
+                    + esc((c.reasons || [c.reason]).join('；')) + '</td></tr>';
+            }).join('') + '</table>';
+        } else {
+            h += '<p class="muted">当前视图没有新的 A–E 触发。</p>';
+        }
+        h += '<h3>旺弱</h3>';
+        var details = a.strength && a.strength.details ? a.strength.details : [];
+        if (details.length) {
+            h += '<table><tr><th>对象</th><th>判断</th><th>依据</th></tr>' + details.map(function (d) {
+                return '<tr><td>' + esc(d.target) + '</td><td>' + esc(d.level) + '</td><td>' + esc(d.reason) + '</td></tr>';
+            }).join('') + '</table>';
+        } else {
+            h += '<p class="muted">暂无大运/流年干支可供旺弱判断。</p>';
+        }
+        return h;
+    }
+
     /**
      * 十二神渲染
      * @param object state {r, view:'yuanpan'|'dayun'|'liunian', dayunIdx, liunianGan, liunianZhi}
@@ -5399,7 +5704,7 @@ function GetGX(tg, dz) {
         }
         var a = G.analyze(opt);
         if (!a) {
-            return { secStart: '<p class="error">无法解析起点。</p>', secDySpirit: '', secQizhu: '', secCombo: '' };
+            return { secStart: '<p class="error">无法解析起点。</p>', secDySpirit: '', secQizhu: '', secCombo: '', secRules: '' };
         }
 
         // 起点 + 全表 + 空亡
@@ -5490,7 +5795,7 @@ function GetGX(tg, dz) {
             cb = '<p class="muted">无可查组合(原文无此配对)。</p>';
         }
 
-        return { secStart: st.join(''), secDySpirit: dy, secQizhu: qz, secCombo: cb };
+        return { secStart: st.join(''), secDySpirit: dy, secQizhu: qz, secCombo: cb, secRules: buildRules(a) };
     }
 
     // 十二神主事速查
@@ -5671,6 +5976,7 @@ function GetGX(tg, dz) {
             $('secDySpirit').innerHTML = html.secDySpirit;
             $('secQizhu').innerHTML = html.secQizhu;
             $('secCombo').innerHTML = html.secCombo;
+            $('secRules').innerHTML = html.secRules;
         }
         function renderDayun() {
             $('secDayun').innerHTML = buildDayunCards(state.r, state.dayunIdx);
