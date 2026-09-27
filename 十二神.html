@@ -5604,6 +5604,16 @@ function GetGX(tg, dz) {
         return L.join('');
     }
 
+    function approxDayunDate(r, y) {
+        var year = r.input.year + y.sui;
+        var month = r.input.month + y.months;
+        while (month > 12) {
+            month -= 12;
+            year += 1;
+        }
+        return { year: year, month: month };
+    }
+
     // 大运卡片(横向排开,可点击选中)
     function buildDayunCards(r, selIdx) {
         var d = r.dayun;
@@ -5611,8 +5621,11 @@ function GetGX(tg, dz) {
         L.push('<p>' + esc(d.dirText) + ',<b>' + esc(d.start.text) + '</b>起运。</p>');
         L.push('<div class="cards">');
         d.yun.forEach(function (y, i) {
+            var begin = approxDayunDate(r, y);
+            var end = (d.yun[i + 1] ? approxDayunDate(r, d.yun[i + 1]) : { year: begin.year + 10, month: begin.month });
             L.push('<div class="card dcard' + (i === selIdx ? ' sel' : '') + '" data-i="' + i + '">'
                 + '<div class="gz">' + esc(y.gz) + '</div>'
+                + '<div class="via">约' + begin.year + '年' + begin.month + '月—' + end.year + '年' + end.month + '月</div>'
                 + '<div class="via">' + y.sui + '岁' + y.months + '个月</div></div>');
         });
         L.push('</div>');
@@ -5637,6 +5650,17 @@ function GetGX(tg, dz) {
     function yearGZ(year) {
         var gz = cal.gz[((year - 4) % 60 + 60) % 60];
         return { gan: gz.charAt(0), zhi: gz.charAt(1) };
+    }
+
+    function strengthTargetLabel(target) {
+        var names = {
+            yeargan: '年柱天干', yearzhi: '年柱地支',
+            monthgan: '月柱天干', monthzhi: '月柱地支',
+            daygan: '日柱天干', dayzhi: '日柱地支',
+            hourgan: '时柱天干', hourzhi: '时柱地支',
+            '大运干': '大运天干', '大运支': '大运地支'
+        };
+        return names[target] || target;
     }
 
     function buildRules(a) {
@@ -5671,7 +5695,7 @@ function GetGX(tg, dz) {
         var details = a.strength && a.strength.details ? a.strength.details : [];
         if (details.length) {
             h += '<table><tr><th>对象</th><th>判断</th><th>依据</th></tr>' + details.map(function (d) {
-                return '<tr><td>' + esc(d.target) + '</td><td>' + esc(d.level) + '</td><td>' + esc(d.reason) + '</td></tr>';
+                return '<tr><td>' + esc(strengthTargetLabel(d.target)) + '</td><td>' + esc(d.level) + '</td><td>' + esc(d.reason) + '</td></tr>';
             }).join('') + '</table>';
         } else {
             h += '<p class="muted">暂无大运/流年干支可供旺弱判断。</p>';
