@@ -242,10 +242,10 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
     <section><h2>四柱</h2><div id="secPillars"></div></section>
     <section><h2>胎元 / 命宫 / 身宫</h2><div id="secPalaces"></div></section>
     <section id="ancSS"><h2>神煞 <small class="muted">叠加大运/流年/流月/流日后各多一列</small></h2><div id="secShensha"></div></section>
-    <section id="ancGX"><h2>刑冲合害 <small class="muted">随下方大运/流年/流月/流日下钻重算</small></h2><div id="secGX"></div></section>
+    <section id="ancGX"><h2>刑冲穿绝与合会 <small class="muted">随下方大运/流年/流月/流日下钻重算</small></h2><div id="secGX"></div></section>
     <section class="feature"><h2>节令口径 <small>启用盲派排盘技法时显示纬度调整月令过程</small></h2><div id="secJieqi"></div></section>
     <section><h2>大运 <small>点大运卡片下钻:流年 → 流月 → 流日</small>
-      <a class="jump" href="#ancGX">↑ 刑冲合害</a><a class="jump" href="#ancSS">↑ 神煞</a></h2><div id="secDayun"></div>
+      <a class="jump" href="#ancGX">↑ 刑冲穿绝</a><a class="jump" href="#ancSS">↑ 神煞</a></h2><div id="secDayun"></div>
       <div id="drillBox" style="display:none">
         <p class="drill-title">节令口径:
           <label class="inline"><input type="radio" name="jqlocal" value="local" checked> 本地实际节令(纬度调月令)</label>
@@ -2713,6 +2713,58 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
 }));
 
 </script>
+<script>/* ==== src/engine/branch_rules.js ==== */
+/** 用户确认的刑冲穿绝关系（2026-10-08），主排盘与串宫共用。 */
+(function(root, factory) {
+    if (typeof module === 'object' && module.exports) { module.exports = factory(); }
+    else { root.BranchRules = factory(); }
+}(typeof self !== 'undefined' ? self : this, function() {
+    'use strict';
+    var ZHI = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+    var CHUAN = ['子未','卯辰','寅巳','丑午','申亥','酉戌'];
+    var CHONG = ['子午','丑未','寅申','巳亥','卯酉','辰戌'];
+    var JUE = ['子巳','午亥','酉寅','申卯'];
+    var XING = ['子卯午','寅巳申','丑未戌','辰酉亥'];
+    function pairHas(table, a, b) {
+        return table.some(function(p) { return p === a+b || p === b+a; });
+    }
+    function relations(a,b) {
+        if (ZHI.indexOf(a)<0 || ZHI.indexOf(b)<0) { return []; }
+        var out = [];
+        if (pairHas(CHONG,a,b)) { out.push('冲'); }
+        if ((a !== b && XING.some(function(g) { return g.indexOf(a)>=0 && g.indexOf(b)>=0; })) ||
+            (a === b && '辰午酉亥'.indexOf(a)>=0)) { out.push('刑'); }
+        if (pairHas(CHUAN,a,b)) { out.push('穿'); }
+        if (pairHas(JUE,a,b)) { out.push('绝'); }
+        return out;
+    }
+    function chartRelations(dz, labels) {
+        var out = [], Z = labels || ['年','月','日','时'];
+        var kinds = {'冲':2,'刑':4,'穿':13,'绝':14};
+        function add(text, indexes, kind) {
+            out.push({target:'地支', text:text, positions:indexes.map(function(i) { return Z[i]; }), kind:kind});
+        }
+        for (var i=0;i<dz.length;i++) { for (var j=i+1;j<dz.length;j++) {
+            var a=ZHI[dz[i]], b=ZHI[dz[j]];
+            if (a === b) { continue; } // 同支自刑由原有关系层处理。
+            relations(a,b).forEach(function(kind) {
+                var table = kind === '冲' ? CHONG : kind === '穿' ? CHUAN : kind === '绝' ? JUE : null;
+                var pair = table ? table.filter(function(p) { return p===a+b || p===b+a; })[0] : (dz[i]<dz[j] ? a+b : b+a);
+                add(pair + (kind === '刑' ? '相刑' : kind), [i,j], kinds[kind]);
+            });
+        } }
+        for (var x=0;x<dz.length;x++) { for (var y=x+1;y<dz.length;y++) { for (var z=y+1;z<dz.length;z++) {
+            var chars=[ZHI[dz[x]],ZHI[dz[y]],ZHI[dz[z]]];
+            XING.forEach(function(g) {
+                if (g.split('').every(function(c) { return chars.indexOf(c)>=0; })) { add(g+'三刑',[x,y,z],3); }
+            });
+        } } }
+        return out;
+    }
+    return {ZHI:ZHI, CHUAN:CHUAN, CHONG:CHONG, JUE:JUE, XING:XING, relations:relations, chartRelations:chartRelations};
+}));
+
+</script>
 <script>/* ==== src/engine/geo.js ==== */
 /**
  * 城市经纬度库 + 城市名/拼音模糊查找 + 纬度取舍
@@ -3731,11 +3783,11 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
  */
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('./calendar.js'));
+        module.exports = factory(require('./calendar.js'), require('./branch_rules.js'));
     } else {
-        root.Relations = factory(root.Calendar);
+        root.Relations = factory(root.Calendar, root.BranchRules);
     }
-}(typeof self !== 'undefined' ? self : this, function (Calendar) {
+}(typeof self !== 'undefined' ? self : this, function (Calendar, BranchRules) {
     'use strict';
 
     /* ===== 以下逐行移植自 paipan.gx.js (WTFPL),见文件头 ===== */
@@ -4138,6 +4190,7 @@ function GetGX(tg, dz) {
     function Relations(cal) {
         this.cal = cal || new Calendar();
     }
+    Relations.prototype.branchRules = BranchRules;
 
     /**
      * 十二长生: 日干见某支的长生状态(阳干顺行,阴干逆行)
@@ -4183,6 +4236,8 @@ function GetGX(tg, dz) {
             for (var i = 0; i < raw[t].length; i++) {
                 var fd = raw[t][i][0];
                 var gx = raw[t][i][1];
+                // 刑冲穿绝由用户确认的共享规则层统一计算，保留同支自刑及合会等原关系。
+                if (gx[0] === 1 && [2,3,4,13].indexOf(gx[1]) >= 0) { continue; }
                 var pos = [];
                 for (var k in fd) {
                     if (fd.hasOwnProperty(k)) {
@@ -4192,7 +4247,7 @@ function GetGX(tg, dz) {
                 out.push({ target: GX_TARGET[gx[0]], text: gx[4], positions: pos, kind: gx[1] });
             }
         }
-        return out;
+        return out.concat(BranchRules.chartRelations(dz, Z));
     };
 
     /**
@@ -5332,8 +5387,13 @@ function GetGX(tg, dz) {
                 n.dz.concat(dyn.map(function (c) { return c.dz; })), DYN_LABELS);
         }
         var title = dynTitle(dyn);
+        var rules = rel.branchRules;
+        title += '<details><summary>刑冲穿绝关系表</summary><p>'
+            + '穿：' + rules.CHUAN.join('、') + '<br>冲：' + rules.CHONG.join('、')
+            + '<br>绝：' + rules.JUE.join('、') + '<br>刑：' + rules.XING.join('、')
+            + '</p><p class="muted">刑组任意两支相刑，三支齐全三刑；同一对地支命中的关系分别显示。原有辰、午、酉、亥同支自刑保留。</p></details>';
         if (!gx.length) {
-            return title + '<p class="muted">无刑冲合害关系。</p>';
+            return title + '<p class="muted">无刑冲穿绝或合会关系。</p>';
         }
         return title + '<table><tr><th>类别</th><th>关系</th><th>柱位</th></tr>'
             + gx.map(function (g) {
