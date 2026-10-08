@@ -83,6 +83,13 @@ a.jump:hover { text-decoration: underline; }
 .scard .age { font-size: 11px; color: #888; }
 .scard .gz { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
 .scard .ss { font-size: 11px; color: #666; }
+.nayin { font-size: 11px; color: #7a6a58; }
+.input-tabs { margin-bottom: 8px; }
+#baziInputPanel { border: 1px solid #d7e2ef; background: #f8fbff; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+#reverseResult { margin-top: 8px; }
+.reverse-match { border: 1px solid #d9d9d9; border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: #fff; }
+.reverse-match .clock-range { font-size: 16px; font-weight: bold; margin: 3px 0; }
+.reverse-match button { margin-top: 5px; }
 .scard .via { font-size: 10px; line-height: 1.35; }
 .scard.clk { cursor: pointer; }
 .scard.now { border-color: #c0392b; box-shadow: 0 0 0 1px #c0392b inset; }  /* 当前年 */
@@ -154,6 +161,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
 .pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
 .pan3row .gz3 { font-size: 26px; font-weight: bold; min-width: 40px; text-align: center; }
 .pan3row .gz3s { font-size: 18px; font-weight: bold; min-width: 64px; text-align: center; }
+.pan3row .gz3n { min-width: 40px; text-align: center; }
 
 /* 十二神页面: 七柱十二神横排三行(与命盘 pan3row 同风格,每格字上标注下) */
 .pan3row.qz3row { align-items: flex-start; }
@@ -382,7 +390,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
     /**
      * 十神全称
      */
-    this.ssq = ['正印', '偏印', '比肩', '劫財', '傷官', '食神', '正財', '偏財', '正官', '偏官'];
+    this.ssq = ['正印', '偏印', '比肩', '劫财', '伤官', '食神', '正财', '偏财', '正官', '七杀'];
     /**
      * 十神缩写
      */
@@ -5520,6 +5528,85 @@ function GetGX(tg, dz) {
 }));
 
 </script>
+<script>/* ==== src/ui/input_state.js ==== */
+/**
+ * 主排盘页与串宫页共用的输入状态协议。
+ * URL hash 是跨页面/刷新事实来源，sessionStorage 是同标签页备用恢复。
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory();
+    } else {
+        root.InputState = factory();
+    }
+}(typeof self !== 'undefined' ? self : this, function () {
+    'use strict';
+
+    var KEY = 'paipan-input-v2';
+    var FIELDS = [
+        'inputMode', 'mode', 'year', 'month', 'day', 'hour', 'minute', 'leap', 'gender',
+        'zwz', 'zty', 'blind', 'manual', 'city', 'path', 'lat', 'lon',
+        'baziYear', 'baziMonth', 'baziDay', 'baziHour', 'startYear', 'endYear'
+    ];
+    var NUMBERS = { year: 1, month: 1, day: 1, hour: 1, minute: 1, lat: 1, lon: 1, startYear: 1, endYear: 1 };
+    var BOOLEANS = { leap: 1, zwz: 1, zty: 1, blind: 1, manual: 1 };
+
+    function enc(s) { return encodeURIComponent(String(s)); }
+    function dec(s) { return decodeURIComponent(String(s).replace(/\+/g, ' ')); }
+
+    function encode(state) {
+        state = state || {};
+        var out = ['v=2'];
+        FIELDS.forEach(function (k) {
+            var v = state[k];
+            if (v === undefined || v === null || v === '') { return; }
+            if (BOOLEANS[k]) { v = v ? '1' : '0'; }
+            out.push(enc(k) + '=' + enc(v));
+        });
+        return out.join('&');
+    }
+
+    function decode(hash) {
+        var s = String(hash || '').replace(/^[#?]/, '');
+        if (!s) { return null; }
+        var raw = {};
+        s.split('&').forEach(function (part) {
+            var p = part.indexOf('=');
+            var k = dec(p < 0 ? part : part.slice(0, p));
+            var v = dec(p < 0 ? '' : part.slice(p + 1));
+            raw[k] = v;
+        });
+        var out = { v: parseInt(raw.v || '2', 10) };
+        var found = false;
+        FIELDS.forEach(function (k) {
+            if (!Object.prototype.hasOwnProperty.call(raw, k)) { return; }
+            found = true;
+            if (BOOLEANS[k]) { out[k] = raw[k] === '1' || raw[k] === 'true'; }
+            else if (NUMBERS[k]) { out[k] = parseFloat(raw[k]); }
+            else { out[k] = raw[k]; }
+        });
+        return found ? out : null;
+    }
+
+    function save(win, state) {
+        try { win.sessionStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* file/privacy mode */ }
+    }
+
+    function load(win) {
+        var fromHash = decode(win && win.location ? win.location.hash : '');
+        if (fromHash) { return fromHash; }
+        try {
+            var s = win.sessionStorage.getItem(KEY);
+            return s ? JSON.parse(s) : null;
+        } catch (e) { return null; }
+    }
+
+    function withHash(base, state) { return base + '#' + encode(state); }
+
+    return { KEY: KEY, FIELDS: FIELDS, encode: encode, decode: decode, save: save, load: load, withHash: withHash };
+}));
+
+</script>
 <script>/* ==== src/ui/gods12_app.js ==== */
 /**
  * 盲派串宫押运十二神 页面逻辑(纯原生,无外部库)
@@ -5531,11 +5618,11 @@ function GetGX(tg, dz) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(
             require('../engine/gods12.js'), require('../engine/gods12data.js'),
-            require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'));
+            require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('./input_state.js'));
     } else {
-        root.Gods12UI = factory(root.Gods12, root.Gods12Data, root.Paipan, root.Geo, root.Calendar);
+        root.Gods12UI = factory(root.Gods12, root.Gods12Data, root.Paipan, root.Geo, root.Calendar, root.InputState);
     }
-}(typeof self !== 'undefined' ? self : this, function (G, D, Paipan, Geo, Calendar) {
+}(typeof self !== 'undefined' ? self : this, function (G, D, Paipan, Geo, Calendar, InputState) {
     'use strict';
 
     var cal = (Paipan && Paipan.cal) || new Calendar();
@@ -5546,6 +5633,7 @@ function GetGX(tg, dz) {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
     function ymd(a) { return a[0] + '年' + a[1] + '月' + a[2] + '日'; }
+    function backHref(base, state) { return state ? InputState.withHash(base, state) : base; }
 
     /* ===== 神 → 星性 → 标签样式(吉星绿/凶星红/中性灰) ===== */
     var NATURE = {};
@@ -5574,6 +5662,8 @@ function GetGX(tg, dz) {
     function wxGZ(gz) { // 干支两字分别着色(干按天干五行,支按地支五行)
         return wxChar(gz.charAt(0), true) + wxChar(gz.charAt(1), false);
     }
+    function nayinCode(code) { return Paipan.relations.nayin(code); }
+    function nayinGZ(gz) { return nayinCode(cal.gz.indexOf(gz)); }
 
     // 命盘: 横排三行八字(天干/地支/胎命身) + 基本信息
     function buildBasic(r) {
@@ -5585,6 +5675,9 @@ function GetGX(tg, dz) {
         }).join('') + '</div>');
         L.push('<div class="pan3row"><span class="pan3label">地支</span>' + cols.map(function (k) {
             return '<span class="gz3">' + wxChar(cal.cdz[P[k].dz], false) + '</span>';
+        }).join('') + '</div>');
+        L.push('<div class="pan3row"><span class="pan3label">纳音</span>' + r.relations.pillars.map(function (p) {
+            return '<span class="nayin gz3n">' + esc(p.nayin) + '</span>';
         }).join('') + '</div>');
         var pal = [['胎', r.palaces.taiyuan.gz], ['身', r.palaces.shengong.gz], ['命', r.palaces.minggong.gz]];
         L.push('<div class="pan3row"><span class="pan3label">胎命身</span>' + pal.map(function (p) {
@@ -5625,6 +5718,7 @@ function GetGX(tg, dz) {
             var end = (d.yun[i + 1] ? approxDayunDate(r, d.yun[i + 1]) : { year: begin.year + 10, month: begin.month });
             L.push('<div class="card dcard' + (i === selIdx ? ' sel' : '') + '" data-i="' + i + '">'
                 + '<div class="gz">' + esc(y.gz) + '</div>'
+                + '<div class="nayin">' + esc(nayinCode(y.code)) + '</div>'
                 + '<div class="via">约' + begin.year + '年' + begin.month + '月—' + end.year + '年' + end.month + '月</div>'
                 + '<div class="via">' + y.sui + '岁' + y.months + '个月</div></div>');
         });
@@ -5734,6 +5828,10 @@ function GetGX(tg, dz) {
         // 起点 + 全表 + 空亡
         var st = [];
         st.push('<p><b>' + VIEW_NAMES[state.view] + '</b> · ' + esc(a.start.via) + '</p>');
+        if (state.view === 'dayun' || state.view === 'liunian') {
+            st.push('<p class="nayin">大运纳音 ' + esc(nayinGZ((dyGan || '') + (dyZhi || '')))
+                + (state.view === 'liunian' ? ' · 流年纳音 ' + esc(nayinGZ(state.liunianGan + state.liunianZhi)) : '') + '</p>');
+        }
         st.push('<p class="shenchips">' + ZHI.map(function (z) {
             return '<span>' + z + '=' + shenTag(a.table[z]) + '</span>';
         }).join('') + '</p>');
@@ -5851,6 +5949,8 @@ function GetGX(tg, dz) {
             return;
         }
         var $ = function (id) { return doc.getElementById(id); };
+        var win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+        var navState = InputState && win ? InputState.load(win) : null;
 
         // 静态区块
         $('mainTable').innerHTML = buildMainTable();
@@ -6095,7 +6195,8 @@ function GetGX(tg, dz) {
             if (back) {
                 var isDev = !!doc.querySelector('script[src]');
                 var isPwa = !!doc.querySelector('link[rel="manifest"]');
-                back.href = (isDev || isPwa) ? 'index.html' : '排盘软件.html';
+                var base = (isDev || isPwa) ? 'index.html' : '排盘软件.html';
+                back.href = backHref(base, navState);
             }
         })();
 
@@ -6105,22 +6206,10 @@ function GetGX(tg, dz) {
             if (typeof location === 'undefined') {
                 return;
             }
-            var raw = '';
-            if (location.hash && location.hash.length > 1) {
-                raw = location.hash.slice(1);
-            } else if (location.search && location.search.length > 1) {
-                raw = location.search.slice(1);
-            }
-            if (!raw) {
-                return;
-            }
-            var q = {};
-            raw.split('&').forEach(function (kv) {
-                var i = kv.indexOf('=');
-                if (i > 0) {
-                    q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
-                }
-            });
+            var raw = (location.hash && location.hash.length > 1) ? location.hash
+                : ((location.search && location.search.length > 1) ? location.search : '');
+            var q = InputState.decode(raw) || navState;
+            if (!q) { return; }
             if (!q.year) {
                 return;
             }
@@ -6133,16 +6222,16 @@ function GetGX(tg, dz) {
             if (q.day) { $('dd').value = q.day; }
             if (q.hour !== undefined) { $('hh').value = q.hour; }
             if (q.minute !== undefined) { $('mi').value = q.minute; }
-            if (q.leap === '1') { $('leap').checked = true; }
+            if (q.leap) { $('leap').checked = true; }
             if (q.gender) {
                 var radios = doc.querySelectorAll('input[name=gender]');
                 Array.prototype.forEach.call(radios, function (rd) { rd.checked = (rd.value === q.gender); });
             }
-            $('zwz').checked = (q.zwz !== '0');
-            $('zty').checked = (q.zty === '1');
-            if (q.blind !== undefined) { $('blindPaipanTechnique').checked = (q.blind !== '0'); }
+            $('zwz').checked = (q.zwz !== false);
+            $('zty').checked = !!q.zty;
+            if (q.blind !== undefined) { $('blindPaipanTechnique').checked = (q.blind !== false); }
             // 出生地: path 回填级联(优先); manual+lat/lon 走手动经纬度
-            if (q.manual === '1' && q.lat && q.lon) {
+            if (q.manual && q.lat !== undefined && q.lon !== undefined) {
                 $('country').value = 'manual';
                 manualWrap.style.display = '';
                 provSel.style.display = citySel.style.display = distSel.style.display = 'none';
@@ -6171,6 +6260,7 @@ function GetGX(tg, dz) {
         buildGroupList: buildGroupList,
         pillarsFromR: pillarsFromR,
         yearGZ: yearGZ,
+        backHref: backHref,
         bind: bind
     };
 }));

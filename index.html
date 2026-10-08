@@ -83,6 +83,13 @@ a.jump:hover { text-decoration: underline; }
 .scard .age { font-size: 11px; color: #888; }
 .scard .gz { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
 .scard .ss { font-size: 11px; color: #666; }
+.nayin { font-size: 11px; color: #7a6a58; }
+.input-tabs { margin-bottom: 8px; }
+#baziInputPanel { border: 1px solid #d7e2ef; background: #f8fbff; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+#reverseResult { margin-top: 8px; }
+.reverse-match { border: 1px solid #d9d9d9; border-radius: 6px; padding: 8px 10px; margin: 6px 0; background: #fff; }
+.reverse-match .clock-range { font-size: 16px; font-weight: bold; margin: 3px 0; }
+.reverse-match button { margin-top: 5px; }
 .scard .via { font-size: 10px; line-height: 1.35; }
 .scard.clk { cursor: pointer; }
 .scard.now { border-color: #c0392b; box-shadow: 0 0 0 1px #c0392b inset; }  /* 当前年 */
@@ -154,6 +161,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
 .pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
 .pan3row .gz3 { font-size: 26px; font-weight: bold; min-width: 40px; text-align: center; }
 .pan3row .gz3s { font-size: 18px; font-weight: bold; min-width: 64px; text-align: center; }
+.pan3row .gz3n { min-width: 40px; text-align: center; }
 
 /* 十二神页面: 七柱十二神横排三行(与命盘 pan3row 同风格,每格字上标注下) */
 .pan3row.qz3row { align-items: flex-start; }
@@ -167,7 +175,11 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
   <h1>盲派排盘 <small>默认启用纬度调整月令</small></h1>
 
   <form id="form" onsubmit="return false;">
-    <div class="row">
+    <div class="row input-tabs">
+      <button type="button" class="tabbtn on" id="inputBirthTab">按出生时间排盘</button>
+      <button type="button" class="tabbtn" id="inputBaziTab">按八字反推</button>
+    </div>
+    <div class="row" id="birthInputPanel">
       <label>历法
         <select id="mode">
           <option value="solar" selected>公历</option>
@@ -180,6 +192,19 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
       <label><input id="hh" type="number" value="10" min="0" max="23"> 时</label>
       <label><input id="mi" type="number" value="0" min="0" max="59"> 分</label>
       <label id="leapWrap" style="display:none"><input id="leap" type="checkbox"> 闰月</label>
+    </div>
+    <div id="baziInputPanel" style="display:none">
+      <div class="row">
+        <label>年柱 <select id="baziYear"></select></label>
+        <label>月柱 <select id="baziMonth"></select></label>
+        <label>日柱 <select id="baziDay"></select></label>
+        <label>时柱 <select id="baziHour"></select></label>
+        <label>搜索年份 <input id="reverseStartYear" type="number" value="1900"> 至
+          <input id="reverseEndYear" type="number" value="2026"></label>
+        <button id="reverseSubmit" type="button">反推出生时间</button>
+      </div>
+      <p class="muted">同一八字可能对应多个日期；八字只能定位到时辰区间，不能确定唯一分钟。</p>
+      <div id="reverseResult"></div>
     </div>
     <div class="row">
       <label>性别
@@ -373,7 +398,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
     /**
      * 十神全称
      */
-    this.ssq = ['正印', '偏印', '比肩', '劫財', '傷官', '食神', '正財', '偏財', '正官', '偏官'];
+    this.ssq = ['正印', '偏印', '比肩', '劫财', '伤官', '食神', '正财', '偏财', '正官', '七杀'];
     /**
      * 十神缩写
      */
@@ -4727,12 +4752,217 @@ function GetGX(tg, dz) {
         for (var jd = jd0; jd < jd1; jd++) {
             var tt = cal.Jtime(jd);
             var g = cal.GetGZ(tt[0], tt[1], tt[2], 12, 0, 0); // 正午取日柱
-            days.push({ solar: [tt[0], tt[1], tt[2]], gz: cal.gz[cal.GZ(g[0][2], g[1][2])] });
+            var code = cal.GZ(g[0][2], g[1][2]);
+            days.push({ solar: [tt[0], tt[1], tt[2]], code: code, gz: cal.gz[code] });
         }
         return { month: m, covered: false, days: days };
     };
 
     return Liunian;
+}));
+
+</script>
+<script>/* ==== src/engine/bazi_reverse.js ==== */
+/**
+ * 八字反推钟表时间：用六十甲子/日柱先筛选，再逐分钟调用现有 Pillars 引擎复核。
+ * 因此真太阳时、晚子时和盲派本地节令口径与正向排盘保持一致。
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./calendar.js'), require('./geo.js'), require('./localjq.js'), require('./pillars.js'));
+    } else {
+        root.BaziReverse = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars);
+    }
+}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars) {
+    'use strict';
+
+    var cal = new Calendar();
+    var pp = new Pillars(cal, Geo, new LocalJQ(cal));
+
+    function parseBazi(input) {
+        var gz;
+        if (Object.prototype.toString.call(input) === '[object Array]') {
+            gz = input.slice(0);
+        } else {
+            var s = String(input || '').replace(/[,，、/|]+/g, ' ').replace(/^\s+|\s+$/g, '');
+            gz = /\s/.test(s) ? s.split(/\s+/) : (s.length === 8 ? s.match(/.{2}/g) : []);
+        }
+        if (!gz || gz.length !== 4) { return false; }
+        var codes = gz.map(function (x) { return cal.gz.indexOf(x); });
+        if (codes.some(function (x) { return x < 0; })) { return false; }
+        return { gz: gz, codes: codes, text: gz.join(' ') };
+    }
+
+    function copyOpt(opt, y, m, d, minuteOfDay) {
+        return {
+            year: y, month: m, day: d,
+            hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60,
+            gender: opt.gender || null, city: opt.city || undefined,
+            lat: opt.lat, lon: opt.lon,
+            zwz: opt.zwz !== false, zty: !!opt.zty,
+            blindPaipanTechnique: opt.blindPaipanTechnique !== false && opt.blind !== false
+        };
+    }
+
+    function timeObj(a) {
+        return { year: a[0], month: a[1], day: a[2], hour: a[3], minute: a[4] };
+    }
+
+    function correctedObj(r) {
+        return timeObj(r.zty ? r.zty.corrected : [r.input.year, r.input.month, r.input.day, r.input.hour, r.input.minute]);
+    }
+
+    function finish(cur) {
+        var midAbs = cur.startAbs + Math.floor((cur.endAbs - cur.startAbs) / 2);
+        var mt = cal.Jtime(midAbs / 1440);
+        cur.midpoint = timeObj(mt);
+        delete cur.startAbs;
+        delete cur.endAbs;
+        delete cur.lastResult;
+        return cur;
+    }
+
+    function search(opt) {
+        opt = opt || {};
+        var parsed = parseBazi(opt.bazi);
+        if (!parsed) { return { error: '请输入有效的四柱八字', matches: [] }; }
+        var y0 = parseInt(opt.startYear, 10), y1 = parseInt(opt.endYear, 10);
+        if (!isFinite(y0) || !isFinite(y1)) { return { error: '请输入搜索起止年份', matches: [] }; }
+        if (y0 > y1) { return { error: '起始年份不能大于结束年份', matches: [] }; }
+        if (y1 - y0 + 1 > 200) { return { error: '搜索范围最多200年', matches: [] }; }
+        if (y0 < 1 || y1 > 2300) { return { error: '搜索年份须在1至2300年之间', matches: [] }; }
+        if (opt.zty && opt.lon === undefined && !opt.city) { return { error: '真太阳时反推需要出生地经度', matches: [] }; }
+
+        var targetDay = parsed.codes[2];
+        var matches = [], cur = null, checkedDays = 0, truncated = false;
+        var jd0 = cal.Jdays(y0, 1, 1, 12, 0, 0);
+        var jd1 = cal.Jdays(y1 + 1, 1, 1, 12, 0, 0);
+        outer: for (var jd = jd0; jd < jd1; jd++) {
+            var date = cal.Jtime(jd);
+            var y = date[0], m = date[1], d = date[2];
+            var raw = cal.GetGZ(y, m, d, 12, 0, 0);
+            if (!raw) { continue; }
+            var rawDay = cal.GZ(raw[0][2], raw[1][2]);
+            var delta = (rawDay - targetDay + 60) % 60;
+            var adjacent = opt.zty && (delta === 1 || delta === 59);
+            var lateZi = opt.zwz === false && delta === 59;
+            if (delta !== 0 && !adjacent && !lateZi) { continue; }
+            checkedDays++;
+
+            // 全国节气可能在当天中途交接；两端都不匹配才排除整天。
+            var endpoints = [0, 1439];
+            var possible = endpoints.some(function (minute) {
+                var boundary = pp.compute(copyOpt(opt, y, m, d, minute));
+                return boundary && boundary.pillars.year.code === parsed.codes[0] && boundary.pillars.month.code === parsed.codes[1];
+            });
+            if (!possible) { continue; }
+
+            for (var minute = 0; minute < 1440; minute++) {
+                var r = pp.compute(copyOpt(opt, y, m, d, minute));
+                if (!r || r.bazi !== parsed.text) { continue; }
+                var abs = Math.round(cal.Jdays(y, m, d, Math.floor(minute / 60), minute % 60, 0) * 1440);
+                var clock = { year: y, month: m, day: d, hour: Math.floor(minute / 60), minute: minute % 60 };
+                if (cur && abs === cur.endAbs + 1) {
+                    cur.endAbs = abs;
+                    cur.to = clock;
+                    cur.ztyTo = correctedObj(r);
+                    cur.lastResult = r;
+                } else {
+                    if (cur) { matches.push(finish(cur)); }
+                    if (matches.length >= 500) { truncated = true; cur = null; break outer; }
+                    cur = {
+                        startAbs: abs, endAbs: abs,
+                        from: clock, to: clock,
+                        ztyFrom: correctedObj(r), ztyTo: correctedObj(r),
+                        bazi: r.bazi, lunar: r.lunar.text, lastResult: r
+                    };
+                }
+            }
+        }
+        if (cur) { matches.push(finish(cur)); }
+        return { matches: matches, checkedDays: checkedDays, truncated: truncated, bazi: parsed.text };
+    }
+
+    return { parseBazi: parseBazi, search: search, cal: cal };
+}));
+
+</script>
+<script>/* ==== src/ui/input_state.js ==== */
+/**
+ * 主排盘页与串宫页共用的输入状态协议。
+ * URL hash 是跨页面/刷新事实来源，sessionStorage 是同标签页备用恢复。
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory();
+    } else {
+        root.InputState = factory();
+    }
+}(typeof self !== 'undefined' ? self : this, function () {
+    'use strict';
+
+    var KEY = 'paipan-input-v2';
+    var FIELDS = [
+        'inputMode', 'mode', 'year', 'month', 'day', 'hour', 'minute', 'leap', 'gender',
+        'zwz', 'zty', 'blind', 'manual', 'city', 'path', 'lat', 'lon',
+        'baziYear', 'baziMonth', 'baziDay', 'baziHour', 'startYear', 'endYear'
+    ];
+    var NUMBERS = { year: 1, month: 1, day: 1, hour: 1, minute: 1, lat: 1, lon: 1, startYear: 1, endYear: 1 };
+    var BOOLEANS = { leap: 1, zwz: 1, zty: 1, blind: 1, manual: 1 };
+
+    function enc(s) { return encodeURIComponent(String(s)); }
+    function dec(s) { return decodeURIComponent(String(s).replace(/\+/g, ' ')); }
+
+    function encode(state) {
+        state = state || {};
+        var out = ['v=2'];
+        FIELDS.forEach(function (k) {
+            var v = state[k];
+            if (v === undefined || v === null || v === '') { return; }
+            if (BOOLEANS[k]) { v = v ? '1' : '0'; }
+            out.push(enc(k) + '=' + enc(v));
+        });
+        return out.join('&');
+    }
+
+    function decode(hash) {
+        var s = String(hash || '').replace(/^[#?]/, '');
+        if (!s) { return null; }
+        var raw = {};
+        s.split('&').forEach(function (part) {
+            var p = part.indexOf('=');
+            var k = dec(p < 0 ? part : part.slice(0, p));
+            var v = dec(p < 0 ? '' : part.slice(p + 1));
+            raw[k] = v;
+        });
+        var out = { v: parseInt(raw.v || '2', 10) };
+        var found = false;
+        FIELDS.forEach(function (k) {
+            if (!Object.prototype.hasOwnProperty.call(raw, k)) { return; }
+            found = true;
+            if (BOOLEANS[k]) { out[k] = raw[k] === '1' || raw[k] === 'true'; }
+            else if (NUMBERS[k]) { out[k] = parseFloat(raw[k]); }
+            else { out[k] = raw[k]; }
+        });
+        return found ? out : null;
+    }
+
+    function save(win, state) {
+        try { win.sessionStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* file/privacy mode */ }
+    }
+
+    function load(win) {
+        var fromHash = decode(win && win.location ? win.location.hash : '');
+        if (fromHash) { return fromHash; }
+        try {
+            var s = win.sessionStorage.getItem(KEY);
+            return s ? JSON.parse(s) : null;
+        } catch (e) { return null; }
+    }
+
+    function withHash(base, state) { return base + '#' + encode(state); }
+
+    return { KEY: KEY, FIELDS: FIELDS, encode: encode, decode: decode, save: save, load: load, withHash: withHash };
 }));
 
 </script>
@@ -4744,11 +4974,12 @@ function GetGX(tg, dz) {
  */
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory(require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('../engine/liunian.js'));
+        module.exports = factory(require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('../engine/liunian.js'),
+            require('../engine/bazi_reverse.js'), require('./input_state.js'));
     } else {
-        root.PaipanUI = factory(root.Paipan, root.Geo, root.Calendar, root.Liunian);
+        root.PaipanUI = factory(root.Paipan, root.Geo, root.Calendar, root.Liunian, root.BaziReverse, root.InputState);
     }
-}(typeof self !== 'undefined' ? self : this, function (Paipan, Geo, Calendar, Liunian) {
+}(typeof self !== 'undefined' ? self : this, function (Paipan, Geo, Calendar, Liunian, BaziReverse, InputState) {
     'use strict';
 
     var cal = Paipan.cal || new Calendar();
@@ -4770,8 +5001,9 @@ function GetGX(tg, dz) {
         return wxChar(gz.charAt(0), true) + wxChar(gz.charAt(1), false);
     }
     function ssOf(r, ganCode) { // 任意天干相对日主的十神(与大运/流年卡片同用 cal.ssq 原表)
-        return cal.ssq[cal.dgs[r.pillars.day.tg][ganCode % 10]];
+        return cal.ssq[cal.dgs[ganCode % 10][r.pillars.day.tg]];
     }
+    function nayinOf(code) { return rel.nayin(code); }
     function wxText(s) { // 整串逐字着色:干支字按五行上色,关系用字(合/刑/化/水…)保持原色
         return String(s).split('').map(function (ch) {
             var wx = WX_GAN[ch] || WX_ZHI[ch];
@@ -4984,6 +5216,7 @@ function GetGX(tg, dz) {
                 + '<div class="age">' + (y0 - r.input.year + 1) + '-' + (y1 - r.input.year + 1) + '岁</div>'
                 + '<div class="gz">' + wxGZ(y.gz) + '</div>'
                 + '<div class="ss">' + esc(ssOf(r, y.code)) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(y.code)) + '</div>'
                 + '</div>');
         });
         L.push('</div>');
@@ -4993,6 +5226,27 @@ function GetGX(tg, dz) {
     /* ===== 流年/流月/流日 下钻(纯构建函数) ===== */
 
     function fmtD(a) { return a[0] + '-' + a[1] + '-' + a[2]; }
+
+    function pad2(n) { return ('0' + n).slice(-2); }
+    function clockDate(t) { return t.year + '-' + pad2(t.month) + '-' + pad2(t.day); }
+    function clockTime(t) { return pad2(t.hour) + ':' + pad2(t.minute); }
+    function rangeText(a, b) {
+        return clockDate(a) + ' ' + clockTime(a) + '—' + (clockDate(a) === clockDate(b) ? '' : clockDate(b) + ' ') + clockTime(b);
+    }
+    function buildReverseMatches(result, showZty) {
+        if (!result || result.error) { return '<p class="error">' + esc(result && result.error ? result.error : '反推失败') + '</p>'; }
+        if (!result.matches.length) { return '<p class="muted">所选年份范围和排盘口径下没有匹配时间。</p>'; }
+        var L = ['<p>找到 <b>' + result.matches.length + '</b> 个候选时辰区间。八字只能定位到时辰区间，不能确定唯一分钟。</p>'];
+        result.matches.forEach(function (m, i) {
+            L.push('<div class="reverse-match"><div><b>' + esc(clockDate(m.from)) + '</b> · ' + esc(m.lunar) + '</div>'
+                + '<div class="clock-range">钟表时间 ' + esc(clockTime(m.from)) + '—' + esc(clockTime(m.to)) + '</div>'
+                + (showZty ? '<div class="via">真太阳时 ' + esc(rangeText(m.ztyFrom, m.ztyTo)) + '</div>' : '')
+                + '<div class="via">复核八字：' + esc(m.bazi) + '</div>'
+                + '<button type="button" data-reverse-i="' + i + '">用此时间排盘</button></div>');
+        });
+        if (result.truncated) { L.push('<p class="error">候选超过500条，已停止；请缩小年份范围。</p>'); }
+        return L.join('');
+    }
 
     // 第1层: 某步大运的10个流年(卡片流;nowYear 用于高亮当前年,默认取系统年)
     function buildDrillLiunian(r, yunIdx, useLocal, nowYear) {
@@ -5013,6 +5267,7 @@ function GetGX(tg, dz) {
                 + '<div class="yr">' + n.year + '</div>'
                 + '<div class="gz">' + wxGZ(n.gz) + '</div>'
                 + '<div class="ss">' + esc(ssOf(r, n.code)) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(n.code)) + '</div>'
                 + '<div class="age">' + n.xuSui + '岁</div>'
                 + '<div class="via">' + boundary + '</div>'
                 + '</div>');
@@ -5031,6 +5286,7 @@ function GetGX(tg, dz) {
             if (m.covered) {
                 L.push('<div class="scard covered"><div class="yr">' + m.name + '(' + m.zhiName + '月)</div>'
                     + '<div class="gz">' + wxGZ(m.gz) + '</div>'
+                    + '<div class="nayin">' + esc(nayinOf(m.code)) + '</div>'
                     + '<div class="via">被' + esc(m.coveredBy) + '覆盖,无' + m.zhiName + '月</div></div>');
                 return;
             }
@@ -5040,6 +5296,7 @@ function GetGX(tg, dz) {
             L.push('<div class="scard clk" data-jieqi="' + m.seq + '">'
                 + '<div class="yr">' + m.name + '(' + m.zhiName + '月)</div>'
                 + '<div class="gz">' + wxGZ(m.gz) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(m.code)) + '</div>'
                 + '<div class="via">' + span + '</div>'
                 + (useLocal && m.fromLunar ? '<div class="via">' + esc(m.fromLunar) + '</div>' : '')
                 + '</div>');
@@ -5058,7 +5315,8 @@ function GetGX(tg, dz) {
         var L = [];
         L.push('<p class="drill-title">流月 <b>' + year + ' ' + wxGZ(m.gz) + '月</b>(' + m.name + '起,' + fmtD(m.from) + ' ~ ' + fmtD(m.to) + '不含,共' + lr.days.length + '天)</p>');
         L.push('<div class="days-grid">' + lr.days.map(function (d, i) {
-            return '<span class="day-cell clk" data-day="' + i + '"><span class="muted">' + d.solar[1] + '-' + d.solar[2] + '</span> ' + wxGZ(d.gz) + '</span>';
+            return '<span class="day-cell clk" data-day="' + i + '"><span class="muted">' + d.solar[1] + '-' + d.solar[2] + '</span> ' + wxGZ(d.gz)
+                + ' <span class="nayin">' + esc(nayinOf(d.code)) + '</span></span>';
         }).join('') + '</div>');
         L.push('<p class="muted" style="font-size:11px">点某天可把流日并入上方刑冲合害/神煞一起算。</p>');
         return L.join('');
@@ -5145,6 +5403,25 @@ function GetGX(tg, dz) {
             return;
         }
         var $ = function (id) { return doc.getElementById(id); };
+        var win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+        var inputMode = 'birth';
+        var lastPlace = null;
+        var lastReverseResult = null;
+
+        function setInputMode(mode) {
+            inputMode = mode === 'bazi' ? 'bazi' : 'birth';
+            $('birthInputPanel').style.display = inputMode === 'birth' ? '' : 'none';
+            $('baziInputPanel').style.display = inputMode === 'bazi' ? '' : 'none';
+            $('submit').style.display = inputMode === 'birth' ? '' : 'none';
+            $('inputBirthTab').className = 'tabbtn' + (inputMode === 'birth' ? ' on' : '');
+            $('inputBaziTab').className = 'tabbtn' + (inputMode === 'bazi' ? ' on' : '');
+        }
+        ['baziYear', 'baziMonth', 'baziDay', 'baziHour'].forEach(function (id, idx) {
+            $(id).innerHTML = cal.gz.map(function (gz) { return '<option value="' + gz + '">' + gz + '</option>'; }).join('');
+            $(id).value = ['丁巳', '戊申', '戊子', '丁巳'][idx];
+        });
+        $('inputBirthTab').addEventListener('click', function () { setInputMode('birth'); });
+        $('inputBaziTab').addEventListener('click', function () { setInputMode('bazi'); });
 
         // 公历/农历切换
         $('mode').addEventListener('change', function () {
@@ -5265,6 +5542,59 @@ function GetGX(tg, dz) {
             if (!manual) { showSelInfo(); }
         });
 
+        function resolvePlace(err) {
+            if ($('country').value === 'manual') {
+                var mLon = parseFloat(lonIn.value), mLat = parseFloat(latIn.value);
+                if (isNaN(mLon) || isNaN(mLat) || mLat < -90 || mLat > 90 || mLon < -180 || mLon > 180) {
+                    err.textContent = '请填写有效的经纬度(经度-180~180,纬度-90~90)';
+                    return null;
+                }
+                return { opt: { lat: mLat, lon: mLon, city: undefined }, state: { manual: true, lat: mLat, lon: mLon } };
+            }
+            var c = null;
+            if (pickedSearch) { c = pickedSearch; }
+            else if (distSel.value) { c = distMap[parseInt(distSel.value, 10)]; }
+            else if (citySel.value) { c = cityMap[parseInt(citySel.value, 10)]; }
+            else if (provSel.value) { c = provMap[parseInt(provSel.value, 10)]; }
+            if (!c) {
+                err.textContent = '请选择出生地(省/市/区)';
+                return null;
+            }
+            return {
+                opt: { city: c.name, lat: c.w, lon: c.j },
+                state: { manual: false, name: c.name, path: c.path, lat: c.w, lon: c.j }
+            };
+        }
+
+        function collectState(place) {
+            var st = {
+                inputMode: inputMode,
+                mode: $('mode').value,
+                year: parseInt($('yy').value, 10), month: parseInt($('mm').value, 10), day: parseInt($('dd').value, 10),
+                hour: parseInt($('hh').value, 10), minute: parseInt($('mi').value, 10) || 0,
+                leap: $('leap').checked,
+                gender: doc.querySelector('input[name=gender]:checked').value,
+                zwz: $('zwz').checked, zty: $('zty').checked, blind: $('blindPaipanTechnique').checked,
+                baziYear: $('baziYear').value, baziMonth: $('baziMonth').value,
+                baziDay: $('baziDay').value, baziHour: $('baziHour').value,
+                startYear: parseInt($('reverseStartYear').value, 10), endYear: parseInt($('reverseEndYear').value, 10)
+            };
+            if (place) {
+                st.manual = !!place.manual; st.lat = place.lat; st.lon = place.lon;
+                if (!place.manual) { st.city = place.name || ''; st.path = (place.path || []).join('/'); }
+            }
+            return st;
+        }
+
+        function persistState(place) {
+            if (!InputState || !win) { return; }
+            var st = collectState(place);
+            InputState.save(win, st);
+            if (win.history && win.history.replaceState) {
+                win.history.replaceState(null, '', '#' + InputState.encode(st));
+            }
+        }
+
         // 排盘
         $('submit').addEventListener('click', function () {
             var err = $('error');
@@ -5289,32 +5619,10 @@ function GetGX(tg, dz) {
                 opt.year = s[0]; opt.month = s[1]; opt.day = s[2];
             }
             // 出生地: 级联选择(省/市/区)或手动经纬度
-            var lastPlace = null; // 供"串宫押运十二神"跳转带参
-            if ($('country').value === 'manual') {
-                var mLon = parseFloat(lonIn.value), mLat = parseFloat(latIn.value);
-                if (isNaN(mLon) || isNaN(mLat) || mLat < -90 || mLat > 90 || mLon < -180 || mLon > 180) {
-                    err.textContent = '请填写有效的经纬度(经度-180~180,纬度-90~90)';
-                    return;
-                }
-                opt.lat = mLat;
-                opt.lon = mLon;
-                opt.city = undefined;
-                lastPlace = { manual: true, lat: mLat, lon: mLon };
-            } else {
-                var c = null;
-                if (pickedSearch) { c = pickedSearch; }
-                else if (distSel.value) { c = distMap[parseInt(distSel.value, 10)]; }
-                else if (citySel.value) { c = cityMap[parseInt(citySel.value, 10)]; }
-                else if (provSel.value) { c = provMap[parseInt(provSel.value, 10)]; }
-                if (!c) {
-                    err.textContent = '请选择出生地(省/市/区)';
-                    return;
-                }
-                opt.city = c.name;
-                opt.lat = c.w;
-                opt.lon = c.j;
-                lastPlace = { manual: false, name: c.name, path: c.path, lat: c.w, lon: c.j };
-            }
+            var resolved = resolvePlace(err);
+            if (!resolved) { return; }
+            opt.city = resolved.opt.city; opt.lat = resolved.opt.lat; opt.lon = resolved.opt.lon;
+            lastPlace = resolved.state;
             var r = Paipan.computeFull(opt);
             if (!r) {
                 err.textContent = '输入无效:请检查日期与城市';
@@ -5327,8 +5635,44 @@ function GetGX(tg, dz) {
                 }
             }
             $('result').style.display = '';
+            persistState(lastPlace);
             updateGods12Link(lastPlace);
             initDrill(r);
+        });
+
+        $('reverseSubmit').addEventListener('click', function () {
+            var err = $('error');
+            err.textContent = '';
+            var resolved = resolvePlace(err);
+            if (!resolved) { return; }
+            lastPlace = resolved.state;
+            var ropt = {
+                bazi: [$('baziYear').value, $('baziMonth').value, $('baziDay').value, $('baziHour').value],
+                startYear: parseInt($('reverseStartYear').value, 10),
+                endYear: parseInt($('reverseEndYear').value, 10),
+                gender: doc.querySelector('input[name=gender]:checked').value,
+                city: resolved.opt.city, lat: resolved.opt.lat, lon: resolved.opt.lon,
+                zwz: $('zwz').checked, zty: $('zty').checked,
+                blindPaipanTechnique: $('blindPaipanTechnique').checked
+            };
+            $('reverseResult').innerHTML = '<p class="muted">正在按当前地点和排盘口径反推，请稍候…</p>';
+            persistState(lastPlace);
+            setTimeout(function () {
+                lastReverseResult = BaziReverse.search(ropt);
+                $('reverseResult').innerHTML = buildReverseMatches(lastReverseResult, ropt.zty);
+            }, 0);
+        });
+        $('reverseResult').addEventListener('click', function (ev) {
+            var t = ev.target;
+            var button = t && t.closest ? t.closest('button[data-reverse-i]') : null;
+            if (!button || !lastReverseResult) { return; }
+            var m = lastReverseResult.matches[parseInt(button.getAttribute('data-reverse-i'), 10)];
+            if (!m) { return; }
+            $('mode').value = 'solar'; $('leap').checked = false; $('leapWrap').style.display = 'none';
+            $('yy').value = m.midpoint.year; $('mm').value = m.midpoint.month; $('dd').value = m.midpoint.day;
+            $('hh').value = m.midpoint.hour; $('mi').value = m.midpoint.minute;
+            setInputMode('birth');
+            $('submit').click();
         });
 
         /* ===== 流年/流月/流日 下钻 ===== */
@@ -5429,33 +5773,43 @@ function GetGX(tg, dz) {
             // 开发版 index.html 有 <script src="src/..."> 外链;打包版(dist/排盘软件.html)与 PWA(pwa/index.html)都是内联
             var isDev = !!doc.querySelector('script[src]');
             var base = isDev ? 'gods12.html' : '十二神.html';
-            var p = [];
-            p.push('mode=' + $('mode').value);
-            p.push('year=' + $('yy').value);
-            p.push('month=' + $('mm').value);
-            p.push('day=' + $('dd').value);
-            p.push('hour=' + $('hh').value);
-            p.push('minute=' + ($('mi').value || '0'));
-            p.push('leap=' + ($('leap').checked ? '1' : '0'));
-            p.push('gender=' + encodeURIComponent(doc.querySelector('input[name=gender]:checked').value));
-            p.push('zwz=' + ($('zwz').checked ? '1' : '0'));
-            p.push('zty=' + ($('zty').checked ? '1' : '0'));
-            p.push('blind=' + ($('blindPaipanTechnique').checked ? '1' : '0'));
-            if (place) {
-                if (place.manual) {
-                    p.push('manual=1');
-                    p.push('lat=' + place.lat);
-                    p.push('lon=' + place.lon);
-                } else {
-                    p.push('city=' + encodeURIComponent(place.name || ''));
-                    p.push('path=' + encodeURIComponent((place.path || []).join('/')));
-                    p.push('lat=' + place.lat);
-                    p.push('lon=' + place.lon);
-                }
-            }
-            link.href = base + '#' + p.join('&');
+            link.href = InputState.withHash(base, collectState(place));
             link.style.display = '';
         }
+
+        (function restoreState() {
+            if (!InputState || !win) { return; }
+            var q = InputState.load(win);
+            if (!q || q.year === undefined) { return; }
+            $('mode').value = q.mode || 'solar';
+            $('leapWrap').style.display = $('mode').value === 'lunar' ? '' : 'none';
+            $('yy').value = q.year; $('mm').value = q.month; $('dd').value = q.day;
+            $('hh').value = q.hour; $('mi').value = q.minute || 0; $('leap').checked = !!q.leap;
+            var radios = doc.querySelectorAll('input[name=gender]');
+            Array.prototype.forEach.call(radios, function (rd) { rd.checked = rd.value === (q.gender || '男'); });
+            $('zwz').checked = q.zwz !== false; $('zty').checked = !!q.zty;
+            $('blindPaipanTechnique').checked = q.blind !== false;
+            if (q.baziYear) { $('baziYear').value = q.baziYear; }
+            if (q.baziMonth) { $('baziMonth').value = q.baziMonth; }
+            if (q.baziDay) { $('baziDay').value = q.baziDay; }
+            if (q.baziHour) { $('baziHour').value = q.baziHour; }
+            if (q.startYear) { $('reverseStartYear').value = q.startYear; }
+            if (q.endYear) { $('reverseEndYear').value = q.endYear; }
+            if (q.manual && q.lat !== undefined && q.lon !== undefined) {
+                $('country').value = 'manual'; manualWrap.style.display = '';
+                provSel.style.display = citySel.style.display = distSel.style.display = 'none';
+                searchInput.style.display = 'none'; lonIn.value = q.lon; latIn.value = q.lat;
+                lastPlace = { manual: true, lat: q.lat, lon: q.lon };
+            } else if (q.path) {
+                selectByPath(q.path.split('/')); searchInput.value = q.path.split('/').slice(-1)[0];
+                lastPlace = { manual: false, name: q.city || '', path: q.path.split('/'), lat: q.lat, lon: q.lon };
+            } else if (q.city) {
+                var found = Geo.findCity(q.city);
+                if (found) { selectByPath(found.path); searchInput.value = q.city; lastPlace = { manual: false, name: found.name, path: found.path, lat: found.w, lon: found.j }; }
+            }
+            setInputMode(q.inputMode || 'birth');
+            $('submit').click();
+        })();
     }
 
     return {
@@ -5463,6 +5817,7 @@ function GetGX(tg, dz) {
         buildBasic: buildBasic, buildPillars: buildPillars, buildJieqi: buildJieqi,
         buildPalaces: buildPalaces, buildDayun: buildDayun, buildGX: buildGX, buildShensha: buildShensha, buildStat: buildStat,
         buildDrillLiunian: buildDrillLiunian, buildDrillLiuyue: buildDrillLiuyue, buildDrillLiuri: buildDrillLiuri,
+        buildReverseMatches: buildReverseMatches,
         wxChar: wxChar, wxGZ: wxGZ, wxText: wxText, ssOf: ssOf,
         dynCols: dynCols, DYN_LABELS: DYN_LABELS,
         bind: bind
