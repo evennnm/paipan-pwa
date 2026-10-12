@@ -193,6 +193,27 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
 .qz3cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 76px; }
 .qz3cell .qzann { font-size: 12px; color: #666; margin-top: 2px; white-space: nowrap; }
 
+/* 串宫复用排盘的表格、卡片及标题；长断语允许换行。 */
+.gods-page .dcard { font-family: inherit; color: inherit; }
+.gods-page .dcard .via { white-space: nowrap; }
+.gods-page table td { white-space: normal; overflow-wrap: anywhere; }
+.gods-page .gods-pan { table-layout: fixed; }
+.gods-page .gods-pan th:first-child { width: 44px; }
+.gods-page .qz3cell { min-width: 0; width: 100%; }
+.gods-page .qz3cell .gz3 { font-size: 20px; }
+.gods-page .qz3cell .qzann { white-space: normal; line-height: 1.4; }
+.gods-page .qzann .tag { white-space: nowrap; }
+.gods-page .gods-palaces .card { flex: 1 1 0; min-width: 0; }
+.gods-page .shenchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.gods-page .shenchips > span { margin: 0; padding: 3px 5px; border: 1px solid #e0e0e0; border-radius: 6px; }
+.gods-page #secCombo td:last-child, .gods-page #mainTable td:last-child { text-align: left; line-height: 1.5; }
+@media (max-width: 600px) {
+  .gods-page .gods-pan th:first-child { width: 32px; }
+  .gods-page .qz3cell .gz3 { font-size: 17px; }
+  .gods-page .qz3cell .qzann { font-size: 11px; }
+  .gods-page .shen-change-target { display: block; }
+}
+
 </style>
 </head>
 <body>

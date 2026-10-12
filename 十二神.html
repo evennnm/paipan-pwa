@@ -193,9 +193,30 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
 .qz3cell { display: inline-flex; flex-direction: column; align-items: center; min-width: 76px; }
 .qz3cell .qzann { font-size: 12px; color: #666; margin-top: 2px; white-space: nowrap; }
 
+/* 串宫复用排盘的表格、卡片及标题；长断语允许换行。 */
+.gods-page .dcard { font-family: inherit; color: inherit; }
+.gods-page .dcard .via { white-space: nowrap; }
+.gods-page table td { white-space: normal; overflow-wrap: anywhere; }
+.gods-page .gods-pan { table-layout: fixed; }
+.gods-page .gods-pan th:first-child { width: 44px; }
+.gods-page .qz3cell { min-width: 0; width: 100%; }
+.gods-page .qz3cell .gz3 { font-size: 20px; }
+.gods-page .qz3cell .qzann { white-space: normal; line-height: 1.4; }
+.gods-page .qzann .tag { white-space: nowrap; }
+.gods-page .gods-palaces .card { flex: 1 1 0; min-width: 0; }
+.gods-page .shenchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.gods-page .shenchips > span { margin: 0; padding: 3px 5px; border: 1px solid #e0e0e0; border-radius: 6px; }
+.gods-page #secCombo td:last-child, .gods-page #mainTable td:last-child { text-align: left; line-height: 1.5; }
+@media (max-width: 600px) {
+  .gods-page .gods-pan th:first-child { width: 32px; }
+  .gods-page .qz3cell .gz3 { font-size: 17px; }
+  .gods-page .qz3cell .qzann { font-size: 11px; }
+  .gods-page .shen-change-target { display: block; }
+}
+
 </style>
 </head>
-<body>
+<body class="gods-page">
 <div id="app">
   <h1>盲派串宫押运 · 排十二神 <small>排盘驱动 · 规则出自《盲派教学》</small></h1>
   <p style="margin:0 0 8px"><a id="backMain" class="jump" href="index.html">← 返回排盘</a></p>
@@ -254,7 +275,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
   <p class="muted" id="hint">请先排盘,排盘后自动带出四柱、大运、胎元、身宫、命宫与空亡。</p>
 
   <div id="result" style="display:none">
-    <section><h2>命盘</h2><div id="secBasic"></div></section>
+    <section><h2>命盘 <small>与排盘页使用同一套四柱展示</small></h2><div id="secBasic"></div></section>
 
     <section class="feature"><h2>大运 <small>点击选中一步,看大运/看流年随所选变化</small></h2><div id="secDayun"></div></section>
 
@@ -5732,6 +5753,1244 @@ function GetGX(tg, dz) {
 }));
 
 </script>
+<script>/* ==== src/engine/liunian.js ==== */
+/**
+ * 流年 / 流月 / 流日 下钻引擎
+ *
+ * 口径(已确认):
+ *   - 流年/流月界限: 默认按本地实际节令(纬度调月令,复用 localjq.getYearJieqi),
+ *     开关可切到全国统一节气(calendar.GetAdjustedJQ 天文节气时刻);
+ *   - 流年/流月的干支本身固定(流年按 (Y-4)%60,流月按流年干五虎遁正月起寅),
+ *     本地/全国只影响交界日期,不影响干支;
+ *   - 流日: 逐日干支,全国统一(日柱不受节气影响),用 calendar 日柱算法;
+ *   - 起运公历时间(近似): 出生公历 + 起运岁数(X岁Y个月),UI 标注"约"。
+ *
+ * 本模块只出干支列表,不含十二神(十二神在 gods12 模块)。
+ *
+ * 用法:
+ *   Node:   var Liunian = require("./engine/liunian.js"); var ln = new Liunian(cal, localjq);
+ *   浏览器: 先引 calendar.js / localjq.js 再引本文件,后 new Liunian(cal, localjq);
+ *   var r = Paipan.computeFull({...});
+ *   ln.liunianList(r, true)         => 各大运的流年列表(本地口径)
+ *   ln.liuyueList(r, 1987, true)    => 1987年12节气月
+ *   ln.liuriList(r, 1987, 0, true)  => 寅月逐日干支
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./calendar.js'), require('./localjq.js'));
+    } else {
+        root.Liunian = factory(root.Calendar, root.LocalJQ);
+    }
+}(typeof self !== 'undefined' ? self : this, function (Calendar, LocalJQ) {
+    'use strict';
+
+    // 12个节的顺序(寅月起)及其在 GetAdjustedJQ 序列中的位置[年份偏移,下标]
+    // (GAJQ(Y) 自春分Y年起;立春/惊蛰在上一回归年序列)
+    var JIE_POS = [[-1, 21], [-1, 23], [0, 1], [0, 3], [0, 5], [0, 7], [0, 9], [0, 11], [0, 13], [0, 15], [0, 17], [0, 19]];
+
+    /**
+     * @param Calendar cal 历法底座实例
+     * @param LocalJQ localjq 纬度调月令引擎
+     */
+    function Liunian(cal, localjq) {
+        this.cal = cal || new Calendar();
+        this.localjq = localjq || new LocalJQ(this.cal);
+    }
+
+    /**
+     * 起运公历时间(近似换算,UI 标注"约"): 出生公历 + 起运岁数(X岁Y个月),月超12进位1年
+     * @param object r computeFull 输出
+     * @return {year, month, text}
+     */
+    Liunian.prototype.qiyunDate = function (r) {
+        var s = r.dayun.start;
+        var y = r.input.year + s.sui;
+        var m = r.input.month + s.months;
+        if (m > 12) {
+            m -= 12;
+            y += 1;
+        }
+        return { year: y, month: m, text: '约' + y + '年' + m + '月' };
+    };
+
+    /**
+     * 某公历年的立春交界
+     * @param bool useLocal true=本地实际节令(纬度调月令) false=全国统一节气时刻
+     * @return {solar:[y,m,d], time:'HH:MM'(仅全国), lunar:text(仅本地)}
+     */
+    Liunian.prototype.lichunOf = function (r, year, useLocal) {
+        var cal = this.cal;
+        if (useLocal) {
+            var lc = this.localjq.getYearJieqi(year, r.lat.rounded).valid[0]; // 本地立春
+            return { solar: lc.solar, lunar: lc.lunar.text };
+        }
+        var t = cal.Jtime(cal.GetAdjustedJQ(year - 1, false)[21]); // 全国立春天文时刻(北京时)
+        return { solar: [t[0], t[1], t[2]], time: ('0' + t[3]).slice(-2) + ':' + ('0' + t[4]).slice(-2) };
+    };
+
+    /**
+     * 所有大运的流年列表
+     * @param object r computeFull 输出
+     * @param bool useLocal 节令口径
+     * @return [{ idx, gz, sui, months, text, qiYunYear(约), liunian: [{year,code,gz,xuSui,lichun}] x10 }]
+     */
+    Liunian.prototype.liunianList = function (r, useLocal) {
+        var cal = this.cal;
+        var qy = this.qiyunDate(r);
+        var out = [];
+        for (var i = 0; i < r.dayun.yun.length; i++) {
+            var y = r.dayun.yun[i];
+            var startYear = qy.year + 10 * i;
+            var liunian = [];
+            for (var k = 0; k < 10; k++) {
+                var Y = startYear + k;
+                var code = ((Y - 4) % 60 + 60) % 60; // 流年干支(对年份固定)
+                liunian.push({
+                    year: Y,
+                    code: code,
+                    gz: cal.gz[code],
+                    xuSui: Y - r.input.year + 1, // 虚岁
+                    lichun: this.lichunOf(r, Y, useLocal)
+                });
+            }
+            out.push({
+                idx: i, gz: y.gz, sui: y.sui, months: y.months, text: y.text,
+                qiYunYear: startYear, qiYunText: '约' + startYear + '年' + qy.month + '月起',
+                liunian: liunian
+            });
+        }
+        return out;
+    };
+
+    /**
+     * 某流年(公历年Y,立春起算)的12个节气月
+     * 月支固定(立春寅月...小寒丑月),月干按流年干五虎遁正月起寅;交界日期按口径
+     * @return { year, yearGZ, useLocal, months: [{seq, name, zhiName, code, gz, from, to, fromText, toText, covered, coveredBy}] }
+     *   from 含该日,to 为下一节(不含);被覆盖的节 covered=true 且无 from/to
+     */
+    Liunian.prototype.liuyueList = function (r, year, useLocal) {
+        var cal = this.cal;
+        var yearCode = ((year - 4) % 60 + 60) % 60;
+        var nv = 2 + 12 * (yearCode % 10); // 五虎遁: 流年干起正月(寅月)
+        var months = [];
+        var seq, e, entry;
+        if (useLocal) {
+            var t = this.localjq.getYearJieqi(year, r.lat.rounded);
+            for (seq = 0; seq < 12; seq++) {
+                e = t.list[seq];
+                entry = {
+                    seq: seq, name: e.name, zhiName: e.zhiName,
+                    code: (seq + nv) % 60, gz: cal.gz[(seq + nv) % 60],
+                    covered: e.covered, coveredBy: e.coveredBy,
+                    from: null, to: null
+                };
+                if (!e.covered) {
+                    for (var vi = 0; vi < t.valid.length; vi++) { // 在存活表中找下一节作区间末
+                        if (t.valid[vi] === e) {
+                            entry.from = e.solar;
+                            entry.fromLunar = e.lunar.text;
+                            entry.to = t.valid[vi + 1].solar;
+                            entry.toLunar = t.valid[vi + 1].lunar.text;
+                            break;
+                        }
+                    }
+                }
+                months.push(entry);
+            }
+        } else {
+            var jdPrev = cal.GetAdjustedJQ(year - 1, false);
+            var jdCur = cal.GetAdjustedJQ(year, false);
+            for (seq = 0; seq < 12; seq++) {
+                var pos = JIE_POS[seq];
+                var jd = (pos[0] === -1 ? jdPrev : jdCur)[pos[1]];
+                var tt = cal.Jtime(jd);
+                var nx = (seq < 11) ? cal.Jtime((JIE_POS[seq + 1][0] === -1 ? jdPrev : jdCur)[JIE_POS[seq + 1][1]])
+                                    : cal.Jtime(jdCur[21]); // 次年立春
+                months.push({
+                    seq: seq, name: cal.jq[pos[1]], zhiName: cal.cdz[(seq + 2) % 12],
+                    code: (seq + nv) % 60, gz: cal.gz[(seq + nv) % 60],
+                    covered: false, coveredBy: null,
+                    from: [tt[0], tt[1], tt[2]], fromTime: ('0' + tt[3]).slice(-2) + ':' + ('0' + tt[4]).slice(-2),
+                    to: [nx[0], nx[1], nx[2]], toTime: ('0' + nx[3]).slice(-2) + ':' + ('0' + nx[4]).slice(-2)
+                });
+            }
+        }
+        return { year: year, yearGZ: cal.gz[yearCode], useLocal: useLocal, months: months };
+    };
+
+    /**
+     * 某节气月的逐日干支(全国统一,日柱不受节气影响)
+     * @param int jieqiIdx liuyueList months 的下标(0=寅月...11=丑月)
+     * @return { month, covered, days: [{solar:[y,m,d], gz}] }
+     */
+    Liunian.prototype.liuriList = function (r, year, jieqiIdx, useLocal) {
+        var cal = this.cal;
+        var m = this.liuyueList(r, year, useLocal).months[jieqiIdx];
+        if (!m || m.covered) {
+            return { month: m || null, covered: true, days: [] };
+        }
+        var days = [];
+        var jd0 = cal.Jdays(m.from[0], m.from[1], m.from[2], 12, 0, 0);
+        var jd1 = cal.Jdays(m.to[0], m.to[1], m.to[2], 12, 0, 0);
+        for (var jd = jd0; jd < jd1; jd++) {
+            var tt = cal.Jtime(jd);
+            var g = cal.GetGZ(tt[0], tt[1], tt[2], 12, 0, 0); // 正午取日柱
+            var code = cal.GZ(g[0][2], g[1][2]);
+            days.push({ solar: [tt[0], tt[1], tt[2]], code: code, gz: cal.gz[code] });
+        }
+        return { month: m, covered: false, days: days };
+    };
+
+    return Liunian;
+}));
+
+</script>
+<script>/* ==== src/engine/bazi_reverse.js ==== */
+/**
+ * 八字反推钟表时间：用六十甲子/日柱先筛选，再逐分钟调用现有 Pillars 引擎复核。
+ * 因此真太阳时、晚子时和盲派本地节令口径与正向排盘保持一致。
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('./calendar.js'), require('./geo.js'), require('./localjq.js'), require('./pillars.js'));
+    } else {
+        root.BaziReverse = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars);
+    }
+}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars) {
+    'use strict';
+
+    var cal = new Calendar();
+    var pp = new Pillars(cal, Geo, new LocalJQ(cal));
+
+    function parseBazi(input) {
+        var gz;
+        if (Object.prototype.toString.call(input) === '[object Array]') {
+            gz = input.slice(0);
+        } else {
+            var s = String(input || '').replace(/[,，、/|]+/g, ' ').replace(/^\s+|\s+$/g, '');
+            gz = /\s/.test(s) ? s.split(/\s+/) : (s.length === 8 ? s.match(/.{2}/g) : []);
+        }
+        if (!gz || gz.length !== 4) { return false; }
+        var codes = gz.map(function (x) { return cal.gz.indexOf(x); });
+        if (codes.some(function (x) { return x < 0; })) { return false; }
+        return { gz: gz, codes: codes, text: gz.join(' ') };
+    }
+
+    function copyOpt(opt, y, m, d, minuteOfDay) {
+        return {
+            year: y, month: m, day: d,
+            hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60,
+            gender: opt.gender || null, city: opt.city || undefined,
+            lat: opt.lat, lon: opt.lon,
+            zwz: opt.zwz !== false, zty: !!opt.zty,
+            blindPaipanTechnique: opt.blindPaipanTechnique !== false && opt.blind !== false
+        };
+    }
+
+    function timeObj(a) {
+        return { year: a[0], month: a[1], day: a[2], hour: a[3], minute: a[4] };
+    }
+
+    function correctedObj(r) {
+        return timeObj(r.zty ? r.zty.corrected : [r.input.year, r.input.month, r.input.day, r.input.hour, r.input.minute]);
+    }
+
+    function finish(cur) {
+        var midAbs = cur.startAbs + Math.floor((cur.endAbs - cur.startAbs) / 2);
+        var mt = cal.Jtime(midAbs / 1440);
+        cur.midpoint = timeObj(mt);
+        delete cur.startAbs;
+        delete cur.endAbs;
+        delete cur.lastResult;
+        return cur;
+    }
+
+    function search(opt) {
+        opt = opt || {};
+        var parsed = parseBazi(opt.bazi);
+        if (!parsed) { return { error: '请输入有效的四柱八字', matches: [] }; }
+        var y0 = parseInt(opt.startYear, 10), y1 = parseInt(opt.endYear, 10);
+        if (!isFinite(y0) || !isFinite(y1)) { return { error: '请输入搜索起止年份', matches: [] }; }
+        if (y0 > y1) { return { error: '起始年份不能大于结束年份', matches: [] }; }
+        if (y1 - y0 + 1 > 200) { return { error: '搜索范围最多200年', matches: [] }; }
+        if (y0 < 1 || y1 > 2300) { return { error: '搜索年份须在1至2300年之间', matches: [] }; }
+        if (opt.zty && opt.lon === undefined && !opt.city) { return { error: '真太阳时反推需要出生地经度', matches: [] }; }
+
+        var targetDay = parsed.codes[2];
+        var matches = [], cur = null, checkedDays = 0, truncated = false;
+        var jd0 = cal.Jdays(y0, 1, 1, 12, 0, 0);
+        var jd1 = cal.Jdays(y1 + 1, 1, 1, 12, 0, 0);
+        outer: for (var jd = jd0; jd < jd1; jd++) {
+            var date = cal.Jtime(jd);
+            var y = date[0], m = date[1], d = date[2];
+            var raw = cal.GetGZ(y, m, d, 12, 0, 0);
+            if (!raw) { continue; }
+            var rawDay = cal.GZ(raw[0][2], raw[1][2]);
+            var delta = (rawDay - targetDay + 60) % 60;
+            var adjacent = opt.zty && (delta === 1 || delta === 59);
+            var lateZi = opt.zwz === false && delta === 59;
+            if (delta !== 0 && !adjacent && !lateZi) { continue; }
+            checkedDays++;
+
+            // 全国节气可能在当天中途交接；两端都不匹配才排除整天。
+            var endpoints = [0, 1439];
+            var possible = endpoints.some(function (minute) {
+                var boundary = pp.compute(copyOpt(opt, y, m, d, minute));
+                return boundary && boundary.pillars.year.code === parsed.codes[0] && boundary.pillars.month.code === parsed.codes[1];
+            });
+            if (!possible) { continue; }
+
+            for (var minute = 0; minute < 1440; minute++) {
+                var r = pp.compute(copyOpt(opt, y, m, d, minute));
+                if (!r || r.bazi !== parsed.text) { continue; }
+                var abs = Math.round(cal.Jdays(y, m, d, Math.floor(minute / 60), minute % 60, 0) * 1440);
+                var clock = { year: y, month: m, day: d, hour: Math.floor(minute / 60), minute: minute % 60 };
+                if (cur && abs === cur.endAbs + 1) {
+                    cur.endAbs = abs;
+                    cur.to = clock;
+                    cur.ztyTo = correctedObj(r);
+                    cur.lastResult = r;
+                } else {
+                    if (cur) { matches.push(finish(cur)); }
+                    if (matches.length >= 500) { truncated = true; cur = null; break outer; }
+                    cur = {
+                        startAbs: abs, endAbs: abs,
+                        from: clock, to: clock,
+                        ztyFrom: correctedObj(r), ztyTo: correctedObj(r),
+                        bazi: r.bazi, lunar: r.lunar.text, lastResult: r
+                    };
+                }
+            }
+        }
+        if (cur) { matches.push(finish(cur)); }
+        return { matches: matches, checkedDays: checkedDays, truncated: truncated, bazi: parsed.text };
+    }
+
+    return { parseBazi: parseBazi, search: search, cal: cal };
+}));
+
+</script>
+<script>/* ==== src/ui/app.js ==== */
+/**
+ * 排盘 UI(纯原生,无外部库)
+ * 结构: 上半为纯 HTML 构建函数(Node 可测), 下半 bind() 做 DOM 绑定(浏览器)
+ *   Node 冒烟: var UI = require("./src/ui/app.js"); UI.buildAll(r) => html 字符串
+ */
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory(require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('../engine/liunian.js'),
+            require('../engine/bazi_reverse.js'), require('./input_state.js'));
+    } else {
+        root.PaipanUI = factory(root.Paipan, root.Geo, root.Calendar, root.Liunian, root.BaziReverse, root.InputState);
+    }
+}(typeof self !== 'undefined' ? self : this, function (Paipan, Geo, Calendar, Liunian, BaziReverse, InputState) {
+    'use strict';
+
+    var cal = Paipan.cal || new Calendar();
+    var liunian = new Liunian(cal); // 流年/流月/流日引擎
+    var ZHU = ['年', '月', '日', '时'];
+    var WX_COLOR = { '金': '#b8860b', '水': '#3a6ea5', '木': '#3d8b37', '火': '#c0392b', '土': '#8d6e4a' };
+    // 干支逐字着色: class 与色值沿用 style.css 的 .wx-*,与十二神页保持一致
+    var WX_GAN = { '甲': 'mu', '乙': 'mu', '丙': 'huo', '丁': 'huo', '戊': 'tu', '己': 'tu', '庚': 'jin', '辛': 'jin', '壬': 'shui', '癸': 'shui' };
+    var WX_ZHI = { '寅': 'mu', '卯': 'mu', '巳': 'huo', '午': 'huo', '申': 'jin', '酉': 'jin', '亥': 'shui', '子': 'shui', '辰': 'tu', '戌': 'tu', '丑': 'tu', '未': 'tu' };
+
+    function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function wxChar(ch, isGan) {
+        var wx = isGan ? WX_GAN[ch] : WX_ZHI[ch];
+        return wx ? '<span class="wx-' + wx + '">' + esc(ch) + '</span>' : esc(ch);
+    }
+    function wxGZ(gz) { // 干支两字分别着色(干按天干五行,支按地支五行)
+        return wxChar(gz.charAt(0), true) + wxChar(gz.charAt(1), false);
+    }
+    function ssOf(r, ganCode) { // 任意天干相对日主的十神(与大运/流年卡片同用 cal.ssq 原表)
+        return cal.ssq[cal.dgs[ganCode % 10][r.pillars.day.tg]];
+    }
+    function nayinOf(code) { return rel.nayin(code); }
+    function wxText(s) { // 整串逐字着色:干支字按五行上色,关系用字(合/刑/化/水…)保持原色
+        return String(s).split('').map(function (ch) {
+            var wx = WX_GAN[ch] || WX_ZHI[ch];
+            return wx ? '<span class="wx-' + wx + '">' + esc(ch) + '</span>' : esc(ch);
+        }).join('');
+    }
+    var rel = Paipan.relations;     // 复用引擎实例,借 getGX 叠动态柱重算刑冲合害
+    var ssEngine = Paipan.shensha;  // 同上,借 Shensha.compute(r, extra) 追加动态柱列
+    var DYN_LABELS = ['年', '月', '日', '时', '大运', '流年', '流月', '流日'];
+
+    function dynCol(pos, code) { // 干支代码 -> 动态柱描述符(code%10=天干序, code%12=地支序)
+        return { pos: pos, code: code, gz: cal.gz[code], tg: code % 10, dz: code % 12 };
+    }
+    function find(list, key, val) {
+        for (var i = 0; i < list.length; i++) {
+            if (list[i][key] === val) {
+                return list[i];
+            }
+        }
+        return null;
+    }
+    /**
+     * 由下钻状态拼出动态柱(命盘四柱之后依次 大运/流年/流月/流日),任一级未选或无效即截断
+     * @param object r Paipan.computeFull 的返回
+     * @param object sel 下钻状态 {yunIdx, year, jieqiIdx, dayIdx, useLocal}
+     * @return array [{pos,code,gz,tg,dz}...]
+     */
+    function dynCols(r, sel) {
+        var out = [];
+        if (!r || !sel || sel.yunIdx < 0) {
+            return out;
+        }
+        var yun = r.dayun.yun[sel.yunIdx];
+        if (!yun) {
+            return out;
+        }
+        out.push(dynCol('大运', yun.code));
+        if (sel.year === null || sel.year === undefined) {
+            return out;
+        }
+        var grp = liunian.liunianList(r, sel.useLocal)[sel.yunIdx];
+        var ln = grp ? find(grp.liunian, 'year', sel.year) : null;
+        if (!ln) {
+            return out;
+        }
+        out.push(dynCol('流年', ln.code));
+        if (sel.jieqiIdx === null || sel.jieqiIdx === undefined) {
+            return out;
+        }
+        var months = (liunian.liuyueList(r, sel.year, sel.useLocal) || {}).months || [];
+        var mo = find(months, 'seq', sel.jieqiIdx);
+        if (!mo || mo.covered) {
+            return out;
+        }
+        out.push(dynCol('流月', mo.code));
+        if (sel.dayIdx === null || sel.dayIdx === undefined) {
+            return out;
+        }
+        var lr = liunian.liuriList(r, sel.year, sel.jieqiIdx, sel.useLocal);
+        var day = (lr && lr.days) ? lr.days[sel.dayIdx] : null;
+        var code = day ? cal.gz.indexOf(day.gz) : -1;
+        if (code < 0) {
+            return out;
+        }
+        out.push(dynCol('流日', code));
+        return out;
+    }
+    function natalGZ(r) {
+        var P = r.pillars;
+        return { tg: [P.year.tg, P.month.tg, P.day.tg, P.hour.tg], dz: [P.year.dz, P.month.dz, P.day.dz, P.hour.dz] };
+    }
+    // 叠加口径标题: 命盘四柱 + 大运 丁未 + 流年 丁卯 …(note 用于补一句查法依据说明)
+    function dynTitle(dyn, note) {
+        if (!dyn || !dyn.length) {
+            return '';
+        }
+        var parts = ['<b>命盘四柱</b>'].concat(dyn.map(function (c) {
+            return c.pos + ' <b>' + wxGZ(c.gz) + '</b>';
+        }));
+        return '<p class="drill-title">当前叠加:' + parts.join(' + ') + (note || '') + '</p>';
+    }
+    function ymd(a) { return a[0] + '年' + a[1] + '月' + a[2] + '日'; }
+
+    /* ============ 纯构建函数(返回 HTML 字符串) ============ */
+
+    function buildBasic(r) {
+        var L = [];
+        L.push('<div class="bazi-big">' + r.bazi.split(' ').map(function (g) { return wxGZ(g); }).join(' ') + '</div>');
+        L.push('<table><tbody>');
+        L.push('<tr><th>公历</th><td>' + ymd([r.input.year, r.input.month, r.input.day]) + ' ' + r.input.hour + ':' + ('0' + r.input.minute).slice(-2) + '</td>'
+            + '<th>农历</th><td>' + esc(r.lunar.text) + '</td></tr>');
+        L.push('<tr><th>性别</th><td>' + esc(r.input.gender || '-') + '</td>'
+            + '<th>节气年</th><td>' + r.gzYear + ' 年(' + wxChar(r.pillars.year.gz[0], true) + '年命)</td></tr>');
+        var cityText = r.city ? (esc(r.city.path.join(' / ')) + (r.city.via ? '(坐标取' + esc(r.city.via) + ')' : '')) : '(直接给纬度)';
+        L.push('<tr><th>城市</th><td>' + cityText + '</td>'
+            + '<th>经纬度</th><td>' + (r.city ? ('东经' + r.city.j + '° 北纬' + r.city.w + '°') : '-') + '</td></tr>');
+        var blindPaipanTechnique = !r.technique || r.technique.blindPaipanTechnique;
+        L.push('<tr><th>排盘口径</th><td colspan="3">' + esc(blindPaipanTechnique
+            ? '盲派排盘技法（纬度调整月令）'
+            : '全国统一节气口径') + '</td></tr>');
+        if (blindPaipanTechnique) {
+            L.push('<tr><th>纬度取舍</th><td>' + r.lat.raw + '° → ' + r.lat.rounded + '°</td>'
+                + '<th>月令调整</th><td>纬度差' + r.lat.diff + '°,天数差' + r.lat.days + '天,' + esc(r.lat.direction) + '</td></tr>');
+        }
+        L.push('<tr><th>晚子时</th><td>' + (r.zwz ? '区分(23点后日柱按当日)' : '不区分') + '</td>'
+            + '<th>旬空</th><td>' + esc(r.relations.xunkong.text) + '</td></tr>');
+        if (r.zty) { // 真太阳时校正信息
+            var c = r.zty.corrected;
+            L.push('<tr><th>真太阳时</th><td colspan="3">校正 ' + r.zty.diffMinutes + ' 分钟(东经' + r.zty.J + '°),'
+                + '校正后 ' + c[0] + '年' + c[1] + '月' + c[2] + '日 ' + c[3] + ':' + ('0' + c[4]).slice(-2)
+                + ((c[0] !== r.input.year || c[1] !== r.input.month || c[2] !== r.input.day) ? ' <span class="tag cover">跨日</span>' : '')
+                + '<br><span class="muted">仅用于日、时柱；年月及大运按钟表时间节令。</span>'
+                + '</td></tr>');
+        }
+        L.push('</tbody></table>');
+        return L.join('');
+    }
+
+    function buildPillars(r) {
+        var rl = r.relations;
+        var ps = rl.pillars;
+        var head = '<thead><tr><th></th>' + ps.map(function (p) { return '<th>' + p.pos + '柱</th>'; }).join('') + '</tr></thead>';
+        function row(name, fn, cls) {
+            return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><th>' + name + '</th>' + ps.map(function (p, i) { return fn(p, i); }).join('') + '</tr>';
+        }
+        var L = ['<table class="pan">', head, '<tbody>'];
+        L.push(row('主星', function (p) { return '<td>' + esc(p.tg.ss) + '</td>'; }));
+        L.push(row('天干', function (p) {
+            return '<td class="gzcell">' + wxChar(p.tg.name, true) + '<i class="wxtag">' + p.tg.wx + '</i></td>';
+        }));
+        L.push(row('地支', function (p) {
+            return '<td class="gzcell">' + wxChar(p.dz.name, false) + '<i class="wxtag">' + p.dz.wx + '</i></td>';
+        }));
+        L.push(row('藏干', function (p) {
+            return '<td>' + p.dz.canggan.map(function (c) { return wxChar(c.name, true) + '<i class="wxtag">' + c.wx + '</i>'; }).join(' ') + '</td>';
+        }));
+        L.push(row('副星', function (p) {
+            return '<td>' + p.dz.canggan.map(function (c) { return esc(c.ss); }).join(' ') + '</td>';
+        }));
+        L.push(row('星运', function (p) { return '<td>' + esc(p.dz.zhangsheng) + '</td>'; }));
+        L.push(row('纳音', function (p) { return '<td>' + esc(p.nayin) + '</td>'; }));
+        L.push(row('空亡', function (p) { return '<td>' + (p.kong ? '<span class="tag cover">空亡</span>' : '-') + '</td>'; }));
+        L.push('</tbody></table>');
+        // 每柱推算过程
+        var P = r.pillars;
+        L.push('<p class="via">年柱:' + esc(P.year.via) + '<br>月柱:' + esc(P.month.via)
+            + '<br>日柱:' + esc(P.day.via) + '<br>时柱:' + esc(P.hour.via) + '</p>');
+        return L.join('');
+    }
+
+    // 本地实际节令表(特色): 历法节令 -> 平移 -> 本地节令 -> 覆盖标记
+    function buildJieqi(r) {
+        if (r.technique && !r.technique.blindPaipanTechnique) {
+            return '<p>盲派排盘技法未启用：本次按全国统一节气口径排盘，不使用纬度调整月令。</p>';
+        }
+        var jq = r.jieqi;
+        var L = [];
+        L.push('<p>基准北纬35°;本地纬度 ' + jq.lat + '°,纬度差 ' + jq.latDiff + '°,天数差 ' + jq.days + ' 天;' + esc(jq.direction)
+            + ';交节日当天不计入,平移从交节次/前一日起数。</p>');
+        L.push('<table><tr><th>节</th><th>时段</th><th>历法公历</th><th>交节时刻</th><th>历法农历</th><th>平移</th><th>本地公历</th><th>本地农历</th><th>状态</th></tr>');
+        jq.list.forEach(function (e) {
+            var cls = e.covered ? ' class="covered"' : (e.name === '次年立春' ? ' class="boundary"' : '');
+            var status = e.covered ? '<span class="tag cover">被' + esc(e.coveredBy) + '覆盖</span>'
+                : (e.name === '次年立春' ? '<span class="muted">年末边界</span>' : '<span class="tag ok">' + e.zhiName + '月起</span>');
+            L.push('<tr' + cls + '><td>' + e.name + '</td><td>' + e.season + '</td>'
+                + '<td>' + ymd(e.liSolar) + '</td><td>' + e.liTime + '</td><td>' + esc(e.liLunar.text) + '</td>'
+                + '<td>' + esc(e.shiftText) + '</td>'
+                + '<td>' + ymd(e.solar) + '</td><td>' + esc(e.lunar.text) + '</td><td>' + status + '</td></tr>');
+        });
+        L.push('</table>');
+        var skipped = jq.list.filter(function (e) { return e.covered; });
+        if (skipped.length) {
+            L.push('<p class="via">覆盖说明:' + skipped.map(function (e) {
+                return esc(e.name) + '被' + esc(e.coveredBy) + '覆盖,' + e.zhiName + '月跳过';
+            }).join(';') + '。</p>');
+        }
+        return L.join('');
+    }
+
+    function buildPalaces(r) {
+        var p = r.palaces;
+        function card(name, o) {
+            return '<div class="card"><div>' + name + '</div><div class="gz">' + wxGZ(o.gz) + '</div><div class="via">' + esc(o.via) + '</div></div>';
+        }
+        return '<div class="cards">' + card('胎元', p.taiyuan) + card('命宫', p.minggong) + card('身宫', p.shengong) + '</div>';
+    }
+
+    function buildDayun(r) {
+        var d = r.dayun;
+        var L = [];
+        L.push('<p>' + esc(d.dirText) + '(' + wxChar(r.pillars.year.gz[0], true) + '年' + (r.input.gender || '') + '),'
+            + (d.shun ? '顺数到下一个本地节' : '逆数到上一个本地节') + '。</p>');
+        L.push('<p class="drill-title">起运推导</p>');
+        L.push('<table><tbody>');
+        L.push('<tr><th>出生日</th><td>' + ymd(d.birth.solar) + '(' + esc(d.birth.lunar) + ')</td><td class="via">' + esc(d.birth.via) + '</td></tr>');
+        L.push('<tr><th>交节日</th><td>' + esc(d.target.name) + ' ' + ymd(d.target.solar) + '(' + esc(d.target.lunar) + ')</td><td class="via">' + esc(d.target.via) + '</td></tr>');
+        L.push('<tr><th>数天数</th><td colspan="2">起止两日都计入,共 ' + d.rawDays + ' 天;取舍后 ' + d.totalDays + ' 天</td></tr>');
+        L.push('<tr><th>折算</th><td colspan="2">' + d.totalDays + ' ÷ 3 = ' + d.div3.quotient + ' 岁'
+            + (d.div3.remainder ? ',余' + d.div3.remainder + ' 折 ' + d.div3.remMonths + ' 个月' : ',无余')
+            + ';再加出生月(' + d.birthOrder + ' 月)' + (d.monthCarry ? ',月数超12进1岁' : '')
+            + ' ⇒ <b>' + esc(d.start.virtualText) + '</b><br><span class="muted">起运虚岁 = 起运岁数 + 1；日期仍按原起运岁月换算。</span></td></tr>');
+        L.push('</tbody></table>');
+        // 大运卡片流(点卡片下钻流年/流月/流日): 起讫年 / 年龄区间 / 着色干支 / 十神
+        var qy = liunian.qiyunDate(r);
+        L.push(drillHeading('大运', '每步10年 · ' + esc(d.dirText) + ' · 点击大运查看流年'));
+        L.push('<div class="strip">');
+        d.yun.forEach(function (y, i) {
+            var y0 = qy.year + 10 * i, y1 = y0 + 9;
+            L.push('<div class="scard clk" data-i="' + i + '">'
+                + '<div class="yr">' + y0 + '-' + y1 + '</div>'
+                + '<div class="age">' + y.xuSui + '-' + (y.xuSui + 9) + '虚岁</div>'
+                + '<div class="gz">' + wxGZ(y.gz) + '</div>'
+                + '<div class="ss">' + esc(ssOf(r, y.code)) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(y.code)) + '</div>'
+                + '</div>');
+        });
+        L.push('</div>');
+        L.push('<details><summary>出生至起运的小运（时柱为1虚岁）</summary><div class="strip xiaoyun-strip">');
+        for (var age=1;age<=d.start.xuSui;age++) {
+            L.push(xiaoyunCard(r, r.input.year+age-1));
+        }
+        L.push('</div></details>');
+        return L.join('');
+    }
+
+    function xiaoyunCard(r, year) {
+        var x = Paipan.xiaoyun.forYear(r, year);
+        if (!x) { return ''; }
+        return '<div class="scard xiaoyun-card" data-xiaoyun-year="' + year + '">'
+            + '<div class="yr">' + year + '</div><div class="age">' + x.age + '虚岁</div>'
+            + '<div class="gz">' + wxGZ(x.gz) + '</div><div class="ss">' + esc(ssOf(r,x.code)) + '</div>'
+            + '<div class="nayin">' + esc(nayinOf(x.code)) + '</div></div>';
+    }
+
+    /* ===== 流年/流月/流日 下钻(纯构建函数) ===== */
+
+    function fmtD(a) { return a[0] + '-' + a[1] + '-' + a[2]; }
+
+    function drillHeading(name, context) {
+        return '<h3 class="drill-heading"><span class="drill-name">' + esc(name) + '</span>'
+            + '<span class="drill-subtitle">' + context + '</span></h3>';
+    }
+
+    function pad2(n) { return ('0' + n).slice(-2); }
+    function clockDate(t) { return t.year + '-' + pad2(t.month) + '-' + pad2(t.day); }
+    function clockTime(t) { return pad2(t.hour) + ':' + pad2(t.minute); }
+    function rangeText(a, b) {
+        return clockDate(a) + ' ' + clockTime(a) + '—' + (clockDate(a) === clockDate(b) ? '' : clockDate(b) + ' ') + clockTime(b);
+    }
+    function buildReverseMatches(result, showZty) {
+        if (!result || result.error) { return '<p class="error">' + esc(result && result.error ? result.error : '反推失败') + '</p>'; }
+        if (!result.matches.length) { return '<p class="muted">所选年份范围和排盘口径下没有匹配时间。</p>'; }
+        var L = ['<p>找到 <b>' + result.matches.length + '</b> 个候选时辰区间。八字只能定位到时辰区间，不能确定唯一分钟。</p>'];
+        result.matches.forEach(function (m, i) {
+            L.push('<div class="reverse-match"><div><b>' + esc(clockDate(m.from)) + '</b> · ' + esc(m.lunar) + '</div>'
+                + '<div class="clock-range">钟表时间 ' + esc(clockTime(m.from)) + '—' + esc(clockTime(m.to)) + '</div>'
+                + (showZty ? '<div class="via">真太阳时 ' + esc(rangeText(m.ztyFrom, m.ztyTo)) + '</div>' : '')
+                + '<div class="via">复核八字：' + esc(m.bazi) + '</div>'
+                + '<button type="button" data-reverse-i="' + i + '">用此时间排盘</button></div>');
+        });
+        if (result.truncated) { L.push('<p class="error">候选超过500条，已停止；请缩小年份范围。</p>'); }
+        return L.join('');
+    }
+
+    // 第1层: 某步大运的10个流年(卡片流;nowYear 用于高亮当前年,默认取系统年)
+    function buildDrillLiunian(r, yunIdx, useLocal, nowYear) {
+        var y = liunian.liunianList(r, useLocal)[yunIdx];
+        if (!y) {
+            return '';
+        }
+        var now = (nowYear === undefined || nowYear === null) ? new Date().getFullYear() : nowYear;
+        var L = [];
+        L.push(drillHeading('流年', '所属大运：<b>' + wxGZ(y.gz) + '</b> · ' + y.qiYunYear + '—' + (y.qiYunYear+9) + '年'
+            + ' · ' + (y.sui+1) + '虚岁' + y.months + '个月起运'));
+        L.push('<p class="drill-note">交界按' + (useLocal ? '本地实际节令' : '全国统一节气') + ' · 点击流年查看流月 · 大运起始日期' + y.qiYunText + '</p>');
+        L.push('<div class="strip">');
+        y.liunian.forEach(function (n) {
+            var boundary = useLocal
+                ? fmtD(n.lichun.solar) + '<br>' + esc(n.lichun.lunar)
+                : fmtD(n.lichun.solar) + ' ' + n.lichun.time;
+            L.push('<div class="scard clk' + (n.year === now ? ' now' : '') + '" data-year="' + n.year + '">'
+                + '<div class="yr">' + n.year + '</div>'
+                + '<div class="gz">' + wxGZ(n.gz) + '</div>'
+                + '<div class="ss">' + esc(ssOf(r, n.code)) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(n.code)) + '</div>'
+                + '<div class="age">' + n.xuSui + '虚岁</div>'
+                + '<div class="via">' + boundary + '</div>'
+                + '</div>');
+        });
+        L.push('</div>');
+        L.push(drillHeading('小运', '与上方流年逐年对应 · 时柱起1虚岁 · ' + (r.dayun.shun?'顺—逆—顺':'逆—顺—逆'))
+            + '<div class="strip xiaoyun-strip">');
+        y.liunian.forEach(function(n) { L.push(xiaoyunCard(r,n.year)); });
+        L.push('</div>');
+        return L.join('');
+    }
+
+    // 第2层: 某流年的12个节气月(卡片流;区间右端不含)
+    function buildDrillLiuyue(r, year, useLocal) {
+        var ly = liunian.liuyueList(r, year, useLocal);
+        var L = [];
+        L.push(drillHeading('流月', '所属流年：<b>' + year + '年 ' + wxGZ(ly.yearGZ) + '</b> · ' + (year-r.input.year+1) + '虚岁'));
+        L.push('<p class="drill-note">按节令分月 · 日期区间含开始、不含结束 · 点击流月查看流日</p>');
+        var small = Paipan.xiaoyun.forYear(r,year);
+        if (small) {
+            L.push('<p class="drill-context">所选' + year + '年小运：<b>' + wxGZ(small.gz) + '</b> · ' + small.age + '虚岁</p>'
+                + '<details><summary>小运推算过程</summary><p>' + small.pattern + '：时柱' + esc(r.pillars.hour.gz)
+                + '为1虚岁 → 首运' + small.first.age + '虚岁' + esc(small.first.gz)
+                + '；每十年干不变、支隔位' + (small.shun?'逆':'顺') + '排 → 最近节点'
+                + small.anchor.age + '虚岁' + esc(small.anchor.gz) + '；再' + (small.shun?'顺':'逆')
+                + '排' + small.offset + '年 → ' + small.age + '虚岁' + esc(small.gz) + '。</p></details>');
+        }
+        L.push('<div class="strip">');
+        ly.months.forEach(function (m) {
+            if (m.covered) {
+                L.push('<div class="scard covered"><div class="yr">' + m.name + '(' + m.zhiName + '月)</div>'
+                    + '<div class="gz">' + wxGZ(m.gz) + '</div>'
+                    + '<div class="ss">' + esc(ssOf(r,m.code)) + '</div>'
+                    + '<div class="nayin">' + esc(nayinOf(m.code)) + '</div>'
+                    + '<div class="via">被' + esc(m.coveredBy) + '覆盖,无' + m.zhiName + '月</div></div>');
+                return;
+            }
+            var span = '<span class="period-date">' + fmtD(m.from) + (useLocal ? '' : ' ' + m.fromTime)
+                + '</span><br><span class="period-date">— ' + fmtD(m.to) + (useLocal ? '' : ' ' + m.toTime) + '</span>';
+            L.push('<div class="scard clk" data-jieqi="' + m.seq + '">'
+                + '<div class="yr">' + m.name + '(' + m.zhiName + '月)</div>'
+                + '<div class="gz">' + wxGZ(m.gz) + '</div>'
+                + '<div class="ss">' + esc(ssOf(r,m.code)) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(m.code)) + '</div>'
+                + '<div class="age">' + (year-r.input.year+1) + '虚岁</div>'
+                + '<div class="via">' + span + '</div>'
+                + (useLocal && m.fromLunar ? '<div class="via">' + esc(m.fromLunar) + '</div>' : '')
+                + '</div>');
+        });
+        L.push('</div>');
+        return L.join('');
+    }
+
+    // 第3层: 某节气月逐日干支
+    function buildDrillLiuri(r, year, jieqiIdx, useLocal) {
+        var lr = liunian.liuriList(r, year, jieqiIdx, useLocal);
+        if (lr.covered || !lr.days.length) {
+            return drillHeading('流日', '所选流月没有有效日期区间') + '<p class="muted">该节令被覆盖,无此月。</p>';
+        }
+        var m = lr.month;
+        var L = [];
+        L.push(drillHeading('流日', '所属流月：<b>' + year + '年 ' + wxGZ(m.gz) + '</b> · ' + esc(m.name) + '（' + m.zhiName + '月）'));
+        L.push('<p class="drill-note">日期：' + fmtD(m.from) + ' 至 ' + fmtD(m.to) + '（结束日不含） · 共' + lr.days.length + '天 · 点击流日叠加关系与神煞</p>');
+        L.push('<div class="strip days-grid">' + lr.days.map(function (d, i) {
+            return '<div class="scard clk day-cell" data-day="' + i + '"><div class="yr">' + fmtD(d.solar) + '</div>'
+                + '<div class="gz">' + wxGZ(d.gz) + '</div><div class="ss">' + esc(ssOf(r,d.code)) + '</div>'
+                + '<div class="nayin">' + esc(nayinOf(d.code)) + '</div><div class="age">' + (d.solar[0]-r.input.year+1) + '虚岁</div></div>';
+        }).join('') + '</div>');
+        L.push('<p class="muted" style="font-size:11px">点某天可把流日并入上方刑冲合害/神煞一起算。</p>');
+        return L.join('');
+    }
+
+    // 刑冲合害: dyn 为下钻拼出的动态柱(见 dynCols),为空时即命盘四柱原结果
+    function buildGX(r, dyn) {
+        var hasDyn = !!(dyn && dyn.length);
+        var gx = r.relations.gx;
+        if (hasDyn) {
+            var n = natalGZ(r);
+            gx = rel.getGX(n.tg.concat(dyn.map(function (c) { return c.tg; })),
+                n.dz.concat(dyn.map(function (c) { return c.dz; })), DYN_LABELS);
+        }
+        var title = dynTitle(dyn);
+        var rules = rel.branchRules;
+        title += '<details><summary>刑冲穿绝关系表</summary><p>'
+            + '穿：' + rules.CHUAN.join('、') + '<br>冲：' + rules.CHONG.join('、')
+            + '<br>绝：' + rules.JUE.join('、') + '<br>刑：' + rules.XING.join('、')
+            + '</p><p class="muted">刑组任意两支相刑，三支齐全三刑；同一对地支命中的关系分别显示。原有辰、午、酉、亥同支自刑保留。</p></details>';
+        return title + '<div class="gx-groups">' + ['天干', '地支'].map(function (target) {
+            var items = gx.filter(function (g) { return g.target === target; });
+            return '<div class="gx-row" data-target="' + target + '"><span class="gx-label">' + target + '</span>'
+                + '<div class="gx-items">' + (items.length ? items.map(function (g) {
+                    return '<span class="gx-chip"><span class="gx-relation">' + wxText(g.text) + '</span>'
+                        + '<small class="gx-position">' + esc(g.positions.join('、')) + '</small></span>';
+                }).join('') : '<span class="muted">—</span>') + '</div></div>';
+        }).join('') + '</div>';
+    }
+
+    function buildStat(r) {
+        var wx = r.relations.wuxing;
+        var total = wx.count.reduce(function (a, b) { return a + b; }, 0) || 1;
+        var bar = '<div class="wxbar">' + wx.names.map(function (n, i) {
+            var pct = wx.count[i] / total * 100;
+            return pct ? '<div style="width:' + pct + '%;background:' + WX_COLOR[n] + '">' + n + wx.count[i] + '</div>' : '';
+        }).join('') + '</div>';
+        var yy = r.relations.yinyang;
+        return bar
+            + '<p>五行(不含藏干):' + wx.names.map(function (n, i) { return n + ' ' + wx.count[i]; }).join('、') + '</p>'
+            + '<p>阴阳(不含藏干):' + yy.names.map(function (n, i) { return n + ' ' + yy.count[i]; }).join('、') + '</p>';
+    }
+
+    // 神煞: 每柱一列(吉绿/凶红/中性灰,title 附释义);叠动态柱时动态柱各成一列并标"动"
+    function buildShensha(r, dyn) {
+        var hasDyn = !!(dyn && dyn.length);
+        var s = hasDyn ? ssEngine.compute(r, dyn) : r.shensha;
+        if (!s || !s.total) {
+            return '<p class="muted">未命中神煞。</p>';
+        }
+        var luckCls = { '吉': 'tag ok', '凶': 'tag cover', '中性': 'tag plain' };
+        function th(p) {
+            return '<th>' + p.pos + (p.dyn ? '<span class="muted">·动</span>' : '柱') + ' ' + wxGZ(p.gz) + '</th>';
+        }
+        var h = '<table><tr><th></th>' + s.pillars.map(th).join('') + '</tr>';
+        h += '<tr><th>神煞</th>' + s.pillars.map(function (p) {
+            if (!p.list.length) {
+                return '<td class="muted">—</td>';
+            }
+            return '<td>' + p.list.map(function (x) {
+                return '<span class="' + luckCls[x.luck] + '" title="' + esc(x.desc) + '">' + esc(x.name) + '</span>'
+                    + '<br><span class="muted" style="font-size:11px">' + esc(x.basis) + '</span>';
+            }).join('<br>') + '</td>';
+        }).join('') + '</tr></table>';
+        h += '<p class="muted">查法:驿马/桃花/华盖/将星/劫煞/灾煞/亡神以年支+日支查;天乙贵人/太极贵人/文昌/学堂/禄神/羊刃/金舆/红艳以日干查;'
+            + '孤辰/寡宿/天喜/红鸾以年支查;天德/月德以月支查(命中各柱干支任一即算)。悬停神煞名看释义。</p>';
+        if (hasDyn) {
+            h += dynTitle(dyn, '<span class="muted">(动态柱只作被查对象,查法依据仍取命盘年支/月支/日干)</span>');
+        }
+        return h;
+    }
+
+    function buildAll(r) {
+        return {
+            secBasic: buildBasic(r),
+            secPillars: buildPillars(r),
+            secJieqi: buildJieqi(r),
+            secPalaces: buildPalaces(r),
+            secDayun: buildDayun(r),
+            secGX: buildGX(r),
+            secShensha: buildShensha(r),
+            secStat: buildStat(r)
+        };
+    }
+
+    /* ============ DOM 绑定(仅浏览器) ============ */
+
+    function bind(doc) {
+        if (!doc) {
+            return;
+        }
+        var $ = function (id) { return doc.getElementById(id); };
+        var win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+        var inputMode = 'birth';
+        var yunDirection = 'auto';
+        var lastPlace = null;
+        var lastReverseResult = null;
+        function setYunDirection(value) {
+            yunDirection = value === 'forward' || value === 'reverse' ? value : 'auto';
+            Array.prototype.forEach.call(doc.querySelectorAll('[data-yun-direction]'), function(button) {
+                button.className = 'tabbtn' + (button.getAttribute('data-yun-direction') === yunDirection ? ' on' : '');
+                button.setAttribute('aria-pressed', button.getAttribute('data-yun-direction') === yunDirection ? 'true' : 'false');
+            });
+        }
+        Array.prototype.forEach.call(doc.querySelectorAll('[data-yun-direction]'), function(button) {
+            button.addEventListener('click', function() {
+                setYunDirection(button.getAttribute('data-yun-direction'));
+                if (drill && drill.r) { $('submit').click(); }
+            });
+        });
+
+        function setInputMode(mode) {
+            inputMode = mode === 'bazi' ? 'bazi' : 'birth';
+            $('birthInputPanel').style.display = inputMode === 'birth' ? '' : 'none';
+            $('baziInputPanel').style.display = inputMode === 'bazi' ? '' : 'none';
+            $('submit').style.display = inputMode === 'birth' ? '' : 'none';
+            $('inputBirthTab').className = 'tabbtn' + (inputMode === 'birth' ? ' on' : '');
+            $('inputBaziTab').className = 'tabbtn' + (inputMode === 'bazi' ? ' on' : '');
+        }
+        ['baziYear', 'baziMonth', 'baziDay', 'baziHour'].forEach(function (id, idx) {
+            $(id).innerHTML = cal.gz.map(function (gz) { return '<option value="' + gz + '">' + gz + '</option>'; }).join('');
+            $(id).value = ['丁巳', '戊申', '戊子', '丁巳'][idx];
+        });
+        $('inputBirthTab').addEventListener('click', function () { setInputMode('birth'); });
+        $('inputBaziTab').addEventListener('click', function () { setInputMode('bazi'); });
+
+        // 公历/农历切换
+        $('mode').addEventListener('change', function () {
+            $('leapWrap').style.display = ($('mode').value === 'lunar') ? '' : 'none';
+        });
+
+        // 出生地: 国家->省->市->区 级联下拉(业界惯例),或"其他"手动经纬度
+        var provSel = $('prov'), citySel = $('cityS'), distSel = $('dist'),
+            cityInfo = $('cityInfo'), countrySel = $('country'),
+            manualWrap = $('manualWrap'), lonIn = $('lonIn'), latIn = $('latIn');
+        var provMap = {}, cityMap = {}, distMap = {}, pickedSearch = null;
+
+        // 搜索框(中文/拼音模糊匹配,手机上不能输文字的 select 的补充): 点选结果自动回填级联下拉
+        var searchInput = $('citySearch'), searchList = $('searchList');
+        function selectByPath(p) {
+            var pid = null, cid = null, did = null;
+            for (var k in provMap) { if (provMap[k].name === p[0]) { pid = k; break; } }
+            if (pid) {
+                provSel.value = pid;
+                loadCities(parseInt(pid, 10));
+            }
+            if (pid && p[1]) {
+                for (var k2 in cityMap) { if (cityMap[k2].name === p[1]) { cid = k2; break; } }
+                if (cid) {
+                    citySel.value = cid;
+                    loadDists(parseInt(cid, 10));
+                }
+            }
+            if (cid && p[2]) {
+                for (var k3 in distMap) { if (distMap[k3].name === p[2]) { did = k3; break; } }
+                if (did) { distSel.value = did; }
+            }
+            showSelInfo();
+        }
+        function showSearch() {
+            var q = searchInput.value.trim();
+            pickedSearch = null;
+            if (!q) { searchList.style.display = 'none'; return; }
+            var list = Geo.findCityAll(q, 8);
+            if (!list.length) { searchList.style.display = 'none'; return; }
+            searchList.innerHTML = list.map(function (c, i) {
+                return '<div data-i="' + i + '">' + esc(c.path.join(' / '))
+                    + '<span class="sub">东经' + c.j + '° 北纬' + c.w + '° → 取舍' + Geo.roundLat(c.w) + '°</span></div>';
+            }).join('');
+            searchList.style.display = '';
+            Array.prototype.forEach.call(searchList.children, function (el) {
+                el.addEventListener('mousedown', function () {
+                    var c = list[parseInt(el.getAttribute('data-i'), 10)];
+                    pickedSearch = c;
+                    searchInput.value = c.path.join('/');
+                    searchList.style.display = 'none';
+                    selectByPath(c.path); // 回填省/市/区下拉,与级联选择互通
+                });
+            });
+        }
+        searchInput.addEventListener('input', showSearch);
+        searchInput.addEventListener('focus', showSearch);
+        searchInput.addEventListener('blur', function () {
+            setTimeout(function () { searchList.style.display = 'none'; }, 150);
+        });
+        function fill(selEl, list, ph) {
+            selEl.innerHTML = '<option value="">' + ph + '</option>'
+                + list.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('');
+        }
+        function loadProvs() {
+            var ps = Geo.provinces(40);
+            provMap = {};
+            ps.forEach(function (p) { provMap[p.id] = p; });
+            fill(provSel, ps, '— 请选择省 —');
+        }
+        function loadCities(pid) {
+            var cs = Geo.childrenOf(pid, 400);
+            cityMap = {};
+            cs.forEach(function (c) { cityMap[c.id] = c; });
+            fill(citySel, cs, '— 请选择市 —');
+        }
+        function loadDists(cid) {
+            var ds = Geo.childrenOf(cid, 400);
+            distMap = {};
+            ds.forEach(function (d) { distMap[d.id] = d; });
+            fill(distSel, ds, '— 请选择区/县 —');
+        }
+        function showSelInfo() {
+            var c = null;
+            if (distSel.value) { c = distMap[parseInt(distSel.value, 10)]; }
+            else if (citySel.value) { c = cityMap[parseInt(citySel.value, 10)]; }
+            else if (provSel.value) { c = provMap[parseInt(provSel.value, 10)]; }
+            if (c) {
+                var via = c.via ? ' (坐标取' + c.via + ')' : '';
+                cityInfo.textContent = c.path.join(' / ') + ' 东经' + c.j + '° 北纬' + c.w + '°' + via
+                    + ' → 取舍' + Geo.roundLat(c.w) + '°';
+            } else {
+                cityInfo.textContent = '';
+            }
+        }
+        loadProvs();
+        provSel.addEventListener('change', function () {
+            pickedSearch = null; // 手动改级联,搜索选中作废
+            citySel.innerHTML = '<option value="">— 请选择市 —</option>';
+            distSel.innerHTML = '<option value="">— 请选择区/县 —</option>';
+            cityMap = {}; distMap = {};
+            if (provSel.value) { loadCities(parseInt(provSel.value, 10)); }
+            showSelInfo();
+        });
+        citySel.addEventListener('change', function () {
+            pickedSearch = null;
+            distSel.innerHTML = '<option value="">— 请选择区/县 —</option>';
+            distMap = {};
+            if (citySel.value) { loadDists(parseInt(citySel.value, 10)); }
+            showSelInfo();
+        });
+        distSel.addEventListener('change', function () { pickedSearch = null; showSelInfo(); });
+        countrySel.addEventListener('change', function () {
+            var manual = countrySel.value === 'manual';
+            manualWrap.style.display = manual ? '' : 'none';
+            provSel.style.display = citySel.style.display = distSel.style.display = manual ? 'none' : '';
+            searchInput.style.display = manual ? 'none' : '';
+            if (!manual) { showSelInfo(); }
+        });
+
+        function resolvePlace(err) {
+            if ($('country').value === 'manual') {
+                var mLon = parseFloat(lonIn.value), mLat = parseFloat(latIn.value);
+                if (isNaN(mLon) || isNaN(mLat) || mLat < -90 || mLat > 90 || mLon < -180 || mLon > 180) {
+                    err.textContent = '请填写有效的经纬度(经度-180~180,纬度-90~90)';
+                    return null;
+                }
+                return { opt: { lat: mLat, lon: mLon, city: undefined }, state: { manual: true, lat: mLat, lon: mLon } };
+            }
+            var c = null;
+            if (pickedSearch) { c = pickedSearch; }
+            else if (distSel.value) { c = distMap[parseInt(distSel.value, 10)]; }
+            else if (citySel.value) { c = cityMap[parseInt(citySel.value, 10)]; }
+            else if (provSel.value) { c = provMap[parseInt(provSel.value, 10)]; }
+            if (!c) {
+                err.textContent = '请选择出生地(省/市/区)';
+                return null;
+            }
+            return {
+                opt: { city: c.name, lat: c.w, lon: c.j },
+                state: { manual: false, name: c.name, path: c.path, lat: c.w, lon: c.j }
+            };
+        }
+
+        function collectState(place) {
+            var st = {
+                inputMode: inputMode,
+                mode: $('mode').value,
+                year: parseInt($('yy').value, 10), month: parseInt($('mm').value, 10), day: parseInt($('dd').value, 10),
+                hour: parseInt($('hh').value, 10), minute: parseInt($('mi').value, 10) || 0,
+                leap: $('leap').checked,
+                gender: doc.querySelector('input[name=gender]:checked').value,
+                zwz: $('zwz').checked, zty: $('zty').checked, blind: $('blindPaipanTechnique').checked,
+                yunDirection: yunDirection,
+                baziYear: $('baziYear').value, baziMonth: $('baziMonth').value,
+                baziDay: $('baziDay').value, baziHour: $('baziHour').value,
+                startYear: parseInt($('reverseStartYear').value, 10), endYear: parseInt($('reverseEndYear').value, 10)
+            };
+            if (place) {
+                st.manual = !!place.manual; st.lat = place.lat; st.lon = place.lon;
+                if (!place.manual) { st.city = place.name || ''; st.path = (place.path || []).join('/'); }
+            }
+            return st;
+        }
+
+        function persistState(place) {
+            if (!InputState || !win) { return; }
+            var st = collectState(place);
+            InputState.save(win, st);
+            if (win.history && win.history.replaceState) {
+                win.history.replaceState(null, '', '#' + InputState.encode(st));
+            }
+        }
+
+        // 排盘
+        $('submit').addEventListener('click', function () {
+            var err = $('error');
+            err.textContent = '';
+            var opt = {
+                year: parseInt($('yy').value, 10),
+                month: parseInt($('mm').value, 10),
+                day: parseInt($('dd').value, 10),
+                hour: parseInt($('hh').value, 10),
+                minute: parseInt($('mi').value, 10) || 0,
+                gender: doc.querySelector('input[name=gender]:checked').value,
+                zwz: $('zwz').checked,
+                zty: $('zty').checked,
+                yunDirection: yunDirection,
+                blindPaipanTechnique: $('blindPaipanTechnique').checked
+            };
+            if ($('mode').value === 'lunar') { // 农历先转公历
+                var s = cal.Lunar2Solar(opt.year, opt.month, opt.day, $('leap').checked);
+                if (s === false) {
+                    err.textContent = '农历日期无效(可能该年无此闰月或日期超出范围)';
+                    return;
+                }
+                opt.year = s[0]; opt.month = s[1]; opt.day = s[2];
+            }
+            // 出生地: 级联选择(省/市/区)或手动经纬度
+            var resolved = resolvePlace(err);
+            if (!resolved) { return; }
+            opt.city = resolved.opt.city; opt.lat = resolved.opt.lat; opt.lon = resolved.opt.lon;
+            lastPlace = resolved.state;
+            var r = Paipan.computeFull(opt);
+            if (!r) {
+                err.textContent = '输入无效:请检查日期与城市';
+                return;
+            }
+            var html = buildAll(r);
+            for (var k in html) {
+                if (html.hasOwnProperty(k)) {
+                    $(k).innerHTML = html[k];
+                }
+            }
+            $('result').style.display = '';
+            persistState(lastPlace);
+            updateGods12Link(lastPlace);
+            initDrill(r);
+        });
+
+        $('reverseSubmit').addEventListener('click', function () {
+            var err = $('error');
+            err.textContent = '';
+            var resolved = resolvePlace(err);
+            if (!resolved) { return; }
+            lastPlace = resolved.state;
+            var ropt = {
+                bazi: [$('baziYear').value, $('baziMonth').value, $('baziDay').value, $('baziHour').value],
+                startYear: parseInt($('reverseStartYear').value, 10),
+                endYear: parseInt($('reverseEndYear').value, 10),
+                gender: doc.querySelector('input[name=gender]:checked').value,
+                city: resolved.opt.city, lat: resolved.opt.lat, lon: resolved.opt.lon,
+                zwz: $('zwz').checked, zty: $('zty').checked,
+                blindPaipanTechnique: $('blindPaipanTechnique').checked
+            };
+            $('reverseResult').innerHTML = '<p class="muted">正在按当前地点和排盘口径反推，请稍候…</p>';
+            persistState(lastPlace);
+            setTimeout(function () {
+                lastReverseResult = BaziReverse.search(ropt);
+                $('reverseResult').innerHTML = buildReverseMatches(lastReverseResult, ropt.zty);
+            }, 0);
+        });
+        $('reverseResult').addEventListener('click', function (ev) {
+            var t = ev.target;
+            var button = t && t.closest ? t.closest('button[data-reverse-i]') : null;
+            if (!button || !lastReverseResult) { return; }
+            var m = lastReverseResult.matches[parseInt(button.getAttribute('data-reverse-i'), 10)];
+            if (!m) { return; }
+            $('mode').value = 'solar'; $('leap').checked = false; $('leapWrap').style.display = 'none';
+            $('yy').value = m.midpoint.year; $('mm').value = m.midpoint.month; $('dd').value = m.midpoint.day;
+            $('hh').value = m.midpoint.hour; $('mi').value = m.midpoint.minute;
+            setInputMode('birth');
+            $('submit').click();
+        });
+
+        /* ===== 流年/流月/流日 下钻 ===== */
+        // 状态: 选中大运/流年/流月/流日 + 节令口径(默认跟随排盘口径: 盲派=本地,否则全国)
+        var drill = { r: null, yunIdx: -1, year: null, jieqiIdx: null, dayIdx: null, useLocal: true };
+
+        function renderDrill() {
+            var box = $('drillBox');
+            if (!box) {
+                return;
+            }
+            if (!drill.r || drill.yunIdx < 0) {
+                box.style.display = 'none';
+                return;
+            }
+            box.style.display = '';
+            $('secDrillY').innerHTML = buildDrillLiunian(drill.r, drill.yunIdx, drill.useLocal);
+            $('secDrillM').innerHTML = (drill.year !== null) ? buildDrillLiuyue(drill.r, drill.year, drill.useLocal) : '';
+            $('secDrillD').innerHTML = (drill.year !== null && drill.jieqiIdx !== null) ? buildDrillLiuri(drill.r, drill.year, drill.jieqiIdx, drill.useLocal) : '';
+            // 刑冲合害/神煞跟着下钻走: 命盘四柱之后并入已选中的 大运/流年/流月/流日 重算
+            var dyn = dynCols(drill.r, drill);
+            $('secGX').innerHTML = buildGX(drill.r, dyn);
+            $('secShensha').innerHTML = buildShensha(drill.r, dyn);
+            // 卡片选中态: 大运 / 流年 / 流月 / 流日 四段各自高亮当前下钻路径
+            [['#secDayun .clk[data-i]', 'data-i', drill.yunIdx],
+             ['#secDrillY .clk[data-year]', 'data-year', drill.year],
+             ['#secDrillM .clk[data-jieqi]', 'data-jieqi', drill.jieqiIdx],
+             ['#secDrillD .clk[data-day]', 'data-day', drill.dayIdx]].forEach(function (g) {
+                Array.prototype.forEach.call(doc.querySelectorAll(g[0]), function (el) {
+                    el.className = el.className.replace(/ sel/g, '')
+                        + (String(el.getAttribute(g[1])) === String(g[2]) ? ' sel' : '');
+                });
+            });
+        }
+
+        function initDrill(r) {
+            drill.r = r;
+            drill.yunIdx = -1;
+            drill.year = null;
+            drill.jieqiIdx = null;
+            drill.dayIdx = null;
+            drill.useLocal = !r.technique || r.technique.blindPaipanTechnique; // 默认跟随排盘口径(默认本地)
+            var radios = doc.querySelectorAll('input[name=jqlocal]');
+            Array.prototype.forEach.call(radios, function (rd) {
+                rd.checked = (rd.value === (drill.useLocal ? 'local' : 'national'));
+            });
+            renderDrill();
+        }
+
+        // 事件: 点大运柱 -> 流年; 点流年行 -> 流月; 点流月行 -> 流日; 点流日格 -> 并入重算; 口径切换重算
+        doc.addEventListener('click', function (ev) {
+            var t = ev.target;
+            while (t && !t.getAttribute) { t = t.parentNode; }
+            if (!t) { return; }
+            var yunCell = t.closest ? t.closest('#secDayun .clk[data-i]') : null;
+            if (yunCell) {
+                drill.yunIdx = parseInt(yunCell.getAttribute('data-i'), 10);
+                drill.year = null;
+                drill.jieqiIdx = null;
+                drill.dayIdx = null;
+                renderDrill();
+                return;
+            }
+            var yRow = t.closest ? t.closest('#secDrillY .clk[data-year]') : null;
+            if (yRow) {
+                drill.year = parseInt(yRow.getAttribute('data-year'), 10);
+                drill.jieqiIdx = null;
+                drill.dayIdx = null;
+                renderDrill();
+                return;
+            }
+            var mRow = t.closest ? t.closest('#secDrillM .clk[data-jieqi]') : null;
+            if (mRow) {
+                drill.jieqiIdx = parseInt(mRow.getAttribute('data-jieqi'), 10);
+                drill.dayIdx = null;
+                renderDrill();
+                return;
+            }
+            var dCell = t.closest ? t.closest('#secDrillD .clk[data-day]') : null;
+            if (dCell) {
+                drill.dayIdx = parseInt(dCell.getAttribute('data-day'), 10);
+                renderDrill();
+            }
+        });
+        Array.prototype.forEach.call(doc.querySelectorAll('input[name=jqlocal]'), function (rd) {
+            rd.addEventListener('change', function () {
+                drill.useLocal = (rd.value === 'local');
+                renderDrill(); // 交界日期按新口径重算
+            });
+        });
+
+        // "串宫押运十二神 →"跳转链接: 带上本次排盘参数(URL hash),目标页区分开发版/成品
+        function updateGods12Link(place) {
+            var link = $('toGods12');
+            if (!link) {
+                return;
+            }
+            // 开发版 index.html 有 <script src="src/..."> 外链;打包版(dist/排盘软件.html)与 PWA(pwa/index.html)都是内联
+            var isDev = !!doc.querySelector('script[src]');
+            var base = isDev ? 'gods12.html' : '十二神.html';
+            link.href = InputState.withHash(base, collectState(place));
+            link.style.display = '';
+        }
+
+        (function restoreState() {
+            if (!InputState || !win) { return; }
+            var q = InputState.load(win);
+            if (!q || q.year === undefined) { return; }
+            $('mode').value = q.mode || 'solar';
+            $('leapWrap').style.display = $('mode').value === 'lunar' ? '' : 'none';
+            $('yy').value = q.year; $('mm').value = q.month; $('dd').value = q.day;
+            $('hh').value = q.hour; $('mi').value = q.minute || 0; $('leap').checked = !!q.leap;
+            var radios = doc.querySelectorAll('input[name=gender]');
+            Array.prototype.forEach.call(radios, function (rd) { rd.checked = rd.value === (q.gender || '男'); });
+            $('zwz').checked = q.zwz !== false; $('zty').checked = !!q.zty;
+            $('blindPaipanTechnique').checked = q.blind !== false;
+            setYunDirection(q.yunDirection || 'auto');
+            if (q.baziYear) { $('baziYear').value = q.baziYear; }
+            if (q.baziMonth) { $('baziMonth').value = q.baziMonth; }
+            if (q.baziDay) { $('baziDay').value = q.baziDay; }
+            if (q.baziHour) { $('baziHour').value = q.baziHour; }
+            if (q.startYear) { $('reverseStartYear').value = q.startYear; }
+            if (q.endYear) { $('reverseEndYear').value = q.endYear; }
+            if (q.manual && q.lat !== undefined && q.lon !== undefined) {
+                $('country').value = 'manual'; manualWrap.style.display = '';
+                provSel.style.display = citySel.style.display = distSel.style.display = 'none';
+                searchInput.style.display = 'none'; lonIn.value = q.lon; latIn.value = q.lat;
+                lastPlace = { manual: true, lat: q.lat, lon: q.lon };
+            } else if (q.path) {
+                selectByPath(q.path.split('/')); searchInput.value = q.path.split('/').slice(-1)[0];
+                lastPlace = { manual: false, name: q.city || '', path: q.path.split('/'), lat: q.lat, lon: q.lon };
+            } else if (q.city) {
+                var found = Geo.findCity(q.city);
+                if (found) { selectByPath(found.path); searchInput.value = q.city; lastPlace = { manual: false, name: found.name, path: found.path, lat: found.w, lon: found.j }; }
+            }
+            setInputMode(q.inputMode || 'birth');
+            $('submit').click();
+        })();
+    }
+
+    return {
+        buildAll: buildAll,
+        buildBasic: buildBasic, buildPillars: buildPillars, buildJieqi: buildJieqi,
+        buildPalaces: buildPalaces, buildDayun: buildDayun, buildGX: buildGX, buildShensha: buildShensha, buildStat: buildStat,
+        buildDrillLiunian: buildDrillLiunian, buildDrillLiuyue: buildDrillLiuyue, buildDrillLiuri: buildDrillLiuri,
+        buildReverseMatches: buildReverseMatches,
+        wxChar: wxChar, wxGZ: wxGZ, wxText: wxText, ssOf: ssOf,
+        dynCols: dynCols, DYN_LABELS: DYN_LABELS,
+        bind: bind
+    };
+}));
+
+</script>
 <script>/* ==== src/ui/gods12_app.js ==== */
 /**
  * 盲派串宫押运十二神 页面逻辑(纯原生,无外部库)
@@ -5743,11 +7002,11 @@ function GetGX(tg, dz) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(
             require('../engine/gods12.js'), require('../engine/gods12data.js'),
-            require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('./input_state.js'));
+            require('../engine/paipan.js'), require('../engine/geo.js'), require('../engine/calendar.js'), require('./input_state.js'), require('./app.js'));
     } else {
-        root.Gods12UI = factory(root.Gods12, root.Gods12Data, root.Paipan, root.Geo, root.Calendar, root.InputState);
+        root.Gods12UI = factory(root.Gods12, root.Gods12Data, root.Paipan, root.Geo, root.Calendar, root.InputState, root.PaipanUI);
     }
-}(typeof self !== 'undefined' ? self : this, function (G, D, Paipan, Geo, Calendar, InputState) {
+}(typeof self !== 'undefined' ? self : this, function (G, D, Paipan, Geo, Calendar, InputState, PanUI) {
     'use strict';
 
     var cal = (Paipan && Paipan.cal) || new Calendar();
@@ -5770,7 +7029,7 @@ function GetGX(tg, dz) {
     function spiritHtml(item) {
         var s = shenTag(item.spirit);
         if (item.changed) {
-            s += ' <span class="tag cover">空变→' + esc(item.changed.to) + '</span>';
+            s += ' <span class="tag cover shen-change">空变→<span class="shen-change-target">' + esc(item.changed.to) + '</span></span>';
         }
         return s;
     }
@@ -5792,35 +7051,19 @@ function GetGX(tg, dz) {
 
     // 命盘: 横排三行八字(天干/地支/胎命身) + 基本信息
     function buildBasic(r) {
-        var L = [];
-        var P = r.pillars;
-        var cols = ['year', 'month', 'day', 'hour'];
-        L.push('<div class="pan3row"><span class="pan3label">天干</span>' + cols.map(function (k) {
-            return '<span class="gz3">' + wxChar(cal.ctg[P[k].tg], true) + '</span>';
-        }).join('') + '</div>');
-        L.push('<div class="pan3row"><span class="pan3label">地支</span>' + cols.map(function (k) {
-            return '<span class="gz3">' + wxChar(cal.cdz[P[k].dz], false) + '</span>';
-        }).join('') + '</div>');
-        L.push('<div class="pan3row"><span class="pan3label">纳音</span>' + r.relations.pillars.map(function (p) {
-            return '<span class="nayin gz3n">' + esc(p.nayin) + '</span>';
-        }).join('') + '</div>');
-        var pal = [['胎', r.palaces.taiyuan.gz], ['身', r.palaces.shengong.gz], ['命', r.palaces.minggong.gz]];
-        L.push('<div class="pan3row"><span class="pan3label">胎命身</span>' + pal.map(function (p) {
-            return '<span class="gz3s"><span class="muted">' + p[0] + '</span>' + wxGZ(p[1]) + '</span>';
-        }).join('') + '</div>');
-        L.push('<p class="muted">八字:' + esc(r.bazi) + ' · 胎元' + esc(r.palaces.taiyuan.gz)
-            + ' 身宫' + esc(r.palaces.shengong.gz) + ' 命宫' + esc(r.palaces.minggong.gz) + '</p>');
-        L.push('<table><tbody>');
-        L.push('<tr><th>公历</th><td>' + ymd([r.input.year, r.input.month, r.input.day]) + ' ' + r.input.hour + ':' + ('0' + r.input.minute).slice(-2) + '</td>'
-            + '<th>农历</th><td>' + esc(r.lunar.text) + '</td></tr>');
-        var cityText = r.city ? esc(r.city.path.join(' / ')) : '(直接给纬度)';
-        L.push('<tr><th>性别</th><td>' + esc(r.input.gender || '-') + '</td>'
-            + '<th>城市</th><td>' + cityText + '</td></tr>');
-        L.push('<tr><th>日柱旬空</th><td>' + esc(r.relations.xunkong.branches.join('、')) + '空</td>'
-            + '<th>年柱旬空</th><td>' + esc(G.kongwangOf(cal.ctg[r.pillars.year.tg], cal.cdz[r.pillars.year.dz]).join('、')) + '空</td></tr>');
-        L.push('</tbody></table>');
-        return L.join('');
+        return PanUI.buildBasic(r) + '<h3 class="drill-heading"><span class="drill-name">四柱</span></h3>'
+            + PanUI.buildPillars(r)
+            + '<h3 class="drill-heading"><span class="drill-name">胎元 · 命宫 · 身宫</span></h3>'
+            + PanUI.buildPalaces(r)
+            + '<p class="muted">日柱旬空：' + esc(r.relations.xunkong.branches.join('、'))
+            + ' · 年柱旬空：' + esc(G.kongwangOf(cal.ctg[r.pillars.year.tg], cal.cdz[r.pillars.year.dz]).join('、')) + '</p>';
     }
+
+    function heading(name, context) {
+        return '<h3 class="drill-heading"><span class="drill-name">' + esc(name)
+            + '</span><span class="drill-subtitle">' + (context || '') + '</span></h3>';
+    }
+
 
     function approxDayunDate(r, y) {
         var year = r.input.year + y.sui;
@@ -5837,15 +7080,17 @@ function GetGX(tg, dz) {
         var d = r.dayun;
         var L = [];
         L.push('<p>' + esc(d.dirText) + ',<b>' + esc(d.start.virtualText) + '</b>。</p>');
-        L.push('<div class="cards">');
+        L.push('<div class="strip">');
         d.yun.forEach(function (y, i) {
             var begin = approxDayunDate(r, y);
             var end = (d.yun[i + 1] ? approxDayunDate(r, d.yun[i + 1]) : { year: begin.year + 10, month: begin.month });
-            L.push('<div class="card dcard' + (i === selIdx ? ' sel' : '') + '" data-i="' + i + '">'
-                + '<div class="gz">' + esc(y.gz) + '</div>'
+            L.push('<button type="button" class="scard clk dcard' + (i === selIdx ? ' sel' : '') + '" data-i="' + i + '" aria-pressed="' + (i === selIdx) + '">'
+                + '<div class="yr" title="约' + begin.year + '年' + begin.month + '月—' + end.year + '年' + end.month + '月">' + begin.year + '—' + (end.year - 1) + '</div>'
+                + '<div class="gz">' + wxGZ(y.gz) + '</div>'
+                + '<div class="ss">' + esc(PanUI.ssOf(r, cal.ctg.indexOf(y.gz.charAt(0)))) + '</div>'
                 + '<div class="nayin">' + esc(nayinCode(y.code)) + '</div>'
-                + '<div class="via">约' + begin.year + '年' + begin.month + '月—' + end.year + '年' + end.month + '月</div>'
-                + '<div class="via">' + y.xuSui + '虚岁' + y.months + '个月</div></div>');
+                + '<div class="via">约' + begin.year + '年' + begin.month + '月起</div>'
+                + '<div class="age">' + y.xuSui + '虚岁' + y.months + '个月</div></button>');
         });
         L.push('</div>');
         return L.join('');
@@ -5883,7 +7128,7 @@ function GetGX(tg, dz) {
     }
 
     function buildRules(a) {
-        var h = '<h2 style="margin-top:10px;">变化准则 <small>《12串宫变化准则》</small></h2>';
+        var h = heading('变化准则', '《12串宫变化准则》');
         var kd = a.kongwangDetail || { source: '未知', trueBranches: [], fakeBranches: [], branches: [] };
         h += '<p class="muted">空亡来源：' + esc(kd.source || '未知')
             + ' · 真空亡：' + esc((kd.trueBranches || []).join('、') || '无')
@@ -5956,7 +7201,7 @@ function GetGX(tg, dz) {
 
         // 起点 + 全表 + 空亡
         var st = [];
-        st.push('<p><b>' + VIEW_NAMES[state.view] + '</b> · ' + esc(a.start.via) + '</p>');
+        st.push(heading(VIEW_NAMES[state.view], esc(a.start.via)));
         if (state.view === 'dayun' || state.view === 'liunian') {
             st.push('<p class="nayin">大运纳音 ' + esc(nayinGZ((dyGan || '') + (dyZhi || '')))
                 + (state.view === 'liunian' ? ' · 流年纳音 ' + esc(nayinGZ(state.liunianGan + state.liunianZhi)) : '') + '</p>');
@@ -5971,7 +7216,7 @@ function GetGX(tg, dz) {
         // 大运干/支落神(看大运/看流年)
         var dy = '';
         if (a.dayun && (a.dayun.gan || a.dayun.zhi)) {
-            dy += '<h2 style="margin-top:10px;">大运' + esc((dyGan || '') + (dyZhi || '')) + '落神 <small>干前五年,支后五年</small></h2>';
+            dy += heading('大运落神', wxGZ((dyGan || '') + (dyZhi || '')) + ' · 干前五年，支后五年');
             dy += '<table><tr><th></th><th>字</th><th>查法</th><th>落神</th></tr>';
             if (a.dayun.gan) {
                 dy += '<tr><td>大运干(前五年)</td><td class="gz">' + esc(a.dayun.gan.char) + '</td>'
@@ -6008,16 +7253,18 @@ function GetGX(tg, dz) {
         }
         var ZHU4 = ['年柱', '月柱', '日柱', '时柱'];
         var PAL3 = ['胎元', '身宫', '命宫'];
-        var qz = '<div class="pan3row qz3row"><span class="pan3label">天干</span>' + ZHU4.map(function (lb) {
+        var qz = heading('七柱落神', '天干、地支及胎命身随当前视图重算')
+            + '<table class="pan gods-pan"><thead><tr><th></th>' + ZHU4.map(function(lb) { return '<th>' + lb + '</th>'; }).join('')
+            + '</tr></thead><tbody><tr><th>天干</th>' + ZHU4.map(function (lb) {
             var it = qfind(lb, '干');
-            return it ? ganCell(it) : '';
-        }).join('') + '</div>';
-        qz += '<div class="pan3row qz3row"><span class="pan3label">地支</span>' + ZHU4.map(function (lb) {
+            return '<td>' + (it ? ganCell(it) : '') + '</td>';
+        }).join('') + '</tr>';
+        qz += '<tr><th>地支</th>' + ZHU4.map(function (lb) {
             var it = qfind(lb, '支');
-            return it ? zhiCell(it) : '';
-        }).join('') + '</div>';
-        qz += '<div class="pan3row qz3row"><span class="pan3label">胎命身</span>' + PAL3.map(function (lb) {
-            return palCell(lb, qfind(lb, '干'), qfind(lb, '支'));
+            return '<td>' + (it ? zhiCell(it) : '') + '</td>';
+        }).join('') + '</tr></tbody></table>';
+        qz += '<div class="cards gods-palaces" aria-label="胎命身">' + PAL3.map(function (lb) {
+            return '<div class="card">' + palCell(lb, qfind(lb, '干'), qfind(lb, '支')) + '</div>';
         }).join('') + '</div>';
         // 日支十二神性格(L1867-1885)
         var dzItem = null;
@@ -6035,7 +7282,7 @@ function GetGX(tg, dz) {
         // 组合断语
         var cb;
         if (a.combos.length) {
-            cb = '<h2 style="margin-top:10px;">组合断语 <small>主神×配神,原文 L880-1080</small></h2>'
+            cb = heading('组合断语', '主神×配神 · 原文 L880-1080')
                 + '<table><tr><th>主神</th><th>配神(柱字)</th><th>断语(原文)</th></tr>'
                 + a.combos.map(function (c) {
                     return '<tr><td>' + esc(c.mainLabel) + ' ' + shenTag(c.main) + '</td>'
