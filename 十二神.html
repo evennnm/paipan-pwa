@@ -98,8 +98,9 @@ a.jump:hover { text-decoration: underline; }
 .scard.covered { background: #fafafa; }
 .scard.covered .gz { color: #bbb; text-decoration: line-through; }
 .scard.covered .wx-mu, .scard.covered .wx-huo, .scard.covered .wx-tu, .scard.covered .wx-jin, .scard.covered .wx-shui { color: #bbb; }
-.days-grid { display: flex; flex-wrap: wrap; gap: 4px; }
-.day-cell { border: 1px solid #e0e0e0; border-radius: 4px; padding: 2px 6px; font-size: 12px; background: #fafbfc; }
+.days-grid { flex-wrap: nowrap; gap: 8px; }
+.days-grid .scard { flex-shrink: 0; }
+.day-cell { font-size: 12px; }
 .day-cell.clk { cursor: pointer; }
 .day-cell.clk:hover { border-color: #4a7ebb; background: #eef3fa; }
 .day-cell.sel { border-color: #4a7ebb; background: #eef3fa; box-shadow: 0 0 0 2px #4a7ebb inset; }
@@ -216,6 +217,11 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
       <label><input id="zwz" type="checkbox" checked> 区分晚子时(23:00-24:00日柱按当日,时柱按次日)</label>
       <label><input id="zty" type="checkbox"> 真太阳时校正 <span class="muted">(仅定日、时柱;默认关)</span></label>
       <label><input id="blindPaipanTechnique" type="checkbox" checked> 盲派排盘技法 <span class="muted">(纬度调整月令)</span></label>
+      <span>运程顺逆：
+        <button type="button" class="tabbtn on" data-yun-direction="auto">自动</button>
+        <button type="button" class="tabbtn" data-yun-direction="forward">顺排</button>
+        <button type="button" class="tabbtn" data-yun-direction="reverse">逆排</button>
+      </span>
       <button id="submit" type="submit">排盘</button>
       <span id="error" class="error"></span>
     </div>
@@ -3404,6 +3410,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
             input: {
                 year: optY, month: optM, day: optD, hour: optH, minute: optI, second: optS,
                 gender: opt.gender || null,
+                yunDirection: opt.yunDirection === 'forward' || opt.yunDirection === 'reverse' ? opt.yunDirection : 'auto',
                 city: opt.city || null
             },
             birth: { year: yy, month: mm, day: dd, hour: hh, minute: mi, second: ss }, // 日时柱用时刻(开真太阳时时为校正后)
@@ -3629,6 +3636,11 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
         var male = (r.input.gender === '男' || r.input.gender === 0 || r.input.gender === '0');
         var shun = (yang && male) || (!yang && !male);
         var dirText = (yang ? '阳' : '阴') + (male ? '男' : '女') + (shun ? '顺行' : '逆行');
+        var directionMode = r.input.yunDirection || 'auto';
+        if (directionMode === 'forward' || directionMode === 'reverse') {
+            shun = directionMode === 'forward';
+            dirText = '手动' + (shun ? '顺行' : '逆行');
+        }
 
         // 2. 数天数: 节令时间线固定使用原始钟表出生时间，真太阳时不参与大运取节。
         var birth = r.input || r.birth;
@@ -3701,6 +3713,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
                 code: code,
                 gz: cal.gz[code],
                 sui: s,
+                xuSui: s + 1,
                 months: months,
                 text: cal.gz[code] + ' ' + s + '岁' + months + '个月'
             });
@@ -3709,6 +3722,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
         return {
             shun: shun,
             dirText: dirText, // 如"阴男逆行"
+            directionMode: directionMode,
             // 数天数中间过程
             birth: {
                 solar: [birth.year, birth.month, birth.day],
@@ -3734,7 +3748,8 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
             div3: { quotient: Math.floor(totalDays / 3), remainder: rem, remMonths: remMonths },
             birthOrder: birthOrder, // 出生月月序
             monthCarry: carry,      // 月>12是否进位
-            start: { sui: sui, months: months, text: sui + '岁' + months + '个月起运' },
+            start: { sui: sui, xuSui: sui + 1, months: months, text: sui + '岁' + months + '个月起运',
+                virtualText: (sui + 1) + '虚岁' + months + '个月起运' },
             yun: yun                // 大运列表
         };
     };
@@ -3756,6 +3771,41 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
  *   yun: [{code, gz, sui, months, text}, ...]  // 每步+10岁
  * }
  */
+
+</script>
+<script>/* ==== src/engine/xiaoyun.js ==== */
+/** 小运：时柱为1虚岁，顺-逆-顺 / 逆-顺-逆（用户2026-10-12提供）。 */
+(function(root,factory) {
+    if (typeof module==='object' && module.exports) { module.exports=factory(require('./calendar.js')); }
+    else { root.Xiaoyun=factory(root.Calendar); }
+}(typeof self!=='undefined'?self:this,function(Calendar) {
+    'use strict';
+    function mod(n,m) { return (n%m+m)%m; }
+    function Xiaoyun(cal) { this.cal=cal||new Calendar(); }
+    Xiaoyun.prototype.forAge=function(r,age) {
+        if (!r || !r.dayun || !isFinite(age) || age<1 || Math.floor(age)!==age) { return null; }
+        var step=r.dayun.shun?1:-1;
+        var hour=r.pillars.hour.code;
+        var firstAge=r.dayun.start.sui+1;
+        var firstCode=mod(hour+step*(firstAge-1),60);
+        var blocks=age>=firstAge?Math.floor((age-firstAge)/10):0;
+        var anchorAge=age>=firstAge?firstAge+blocks*10:1;
+        // 每十年干不变，支按与年内相反的方向隔两位。
+        var anchorCode=age>=firstAge?this.cal.GZ(firstCode%10,mod(firstCode%12-step*2*blocks,12)):hour;
+        var code=mod(anchorCode+step*(age-anchorAge),60);
+        return {age:age,code:code,gz:this.cal.gz[code],shun:r.dayun.shun,
+            first:{age:firstAge,code:firstCode,gz:this.cal.gz[firstCode]},
+            anchor:{age:anchorAge,code:anchorCode,gz:this.cal.gz[anchorCode]},
+            blocks:blocks,offset:age-anchorAge,pattern:step===1?'顺—逆—顺':'逆—顺—逆'};
+    };
+    Xiaoyun.prototype.forYear=function(r,year) {
+        if (!isFinite(year) || Math.floor(year)!==year) { return null; }
+        var result=this.forAge(r,year-r.input.year+1);
+        if (result) { result.year=year; }
+        return result;
+    };
+    return Xiaoyun;
+}));
 
 </script>
 <script>/* ==== src/engine/relations.js ==== */
@@ -4572,12 +4622,12 @@ function GetGX(tg, dz) {
         module.exports = factory(
             require('./calendar.js'), require('./geo.js'), require('./localjq.js'),
             require('./pillars.js'), require('./palaces.js'), require('./dayun.js'), require('./relations.js'),
-            require('./shensha.js')
+            require('./shensha.js'), require('./xiaoyun.js')
         );
     } else {
-        root.Paipan = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars, root.Palaces, root.Dayun, root.Relations, root.Shensha);
+        root.Paipan = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars, root.Palaces, root.Dayun, root.Relations, root.Shensha, root.Xiaoyun);
     }
-}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars, Palaces, Dayun, Relations, Shensha) {
+}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars, Palaces, Dayun, Relations, Shensha, Xiaoyun) {
     'use strict';
 
     var cal = new Calendar();
@@ -4586,6 +4636,7 @@ function GetGX(tg, dz) {
     var dy = new Dayun(cal);
     var rel = new Relations(cal);
     var ss = new Shensha(cal);
+    var xy = new Xiaoyun(cal);
 
     /**
      * 完整排盘
@@ -4612,7 +4663,7 @@ function GetGX(tg, dz) {
     return {
         computeFull: computeFull,
         // 暴露子引擎实例,便于UI取用中间表(如节令表、城市库)
-        cal: cal, pillars: pp, palaces: pal, dayun: dy, relations: rel, shensha: ss
+        cal: cal, pillars: pp, palaces: pal, dayun: dy, relations: rel, shensha: ss, xiaoyun: xy
     };
 }));
 
@@ -5595,7 +5646,7 @@ function GetGX(tg, dz) {
     var KEY = 'paipan-input-v2';
     var FIELDS = [
         'inputMode', 'mode', 'year', 'month', 'day', 'hour', 'minute', 'leap', 'gender',
-        'zwz', 'zty', 'blind', 'manual', 'city', 'path', 'lat', 'lon',
+        'zwz', 'zty', 'blind', 'yunDirection', 'manual', 'city', 'path', 'lat', 'lon',
         'baziYear', 'baziMonth', 'baziDay', 'baziHour', 'startYear', 'endYear'
     ];
     var NUMBERS = { year: 1, month: 1, day: 1, hour: 1, minute: 1, lat: 1, lon: 1, startYear: 1, endYear: 1 };
@@ -5761,7 +5812,7 @@ function GetGX(tg, dz) {
     function buildDayunCards(r, selIdx) {
         var d = r.dayun;
         var L = [];
-        L.push('<p>' + esc(d.dirText) + ',<b>' + esc(d.start.text) + '</b>起运。</p>');
+        L.push('<p>' + esc(d.dirText) + ',<b>' + esc(d.start.virtualText) + '</b>。</p>');
         L.push('<div class="cards">');
         d.yun.forEach(function (y, i) {
             var begin = approxDayunDate(r, y);
@@ -5770,7 +5821,7 @@ function GetGX(tg, dz) {
                 + '<div class="gz">' + esc(y.gz) + '</div>'
                 + '<div class="nayin">' + esc(nayinCode(y.code)) + '</div>'
                 + '<div class="via">约' + begin.year + '年' + begin.month + '月—' + end.year + '年' + end.month + '月</div>'
-                + '<div class="via">' + y.sui + '岁' + y.months + '个月</div></div>');
+                + '<div class="via">' + y.xuSui + '虚岁' + y.months + '个月</div></div>');
         });
         L.push('</div>');
         return L.join('');
@@ -6005,6 +6056,29 @@ function GetGX(tg, dz) {
         var $ = function (id) { return doc.getElementById(id); };
         var win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
         var navState = InputState && win ? InputState.load(win) : null;
+        var yunDirection = navState && navState.yunDirection || 'auto';
+        function setYunDirection(value) {
+            yunDirection = value === 'forward' || value === 'reverse' ? value : 'auto';
+            Array.prototype.forEach.call(doc.querySelectorAll('[data-yun-direction]'), function(button) {
+                button.className = 'tabbtn' + (button.getAttribute('data-yun-direction') === yunDirection ? ' on' : '');
+                button.setAttribute('aria-pressed', button.getAttribute('data-yun-direction') === yunDirection ? 'true' : 'false');
+            });
+        }
+        Array.prototype.forEach.call(doc.querySelectorAll('[data-yun-direction]'), function(button) {
+            button.addEventListener('click', function() {
+                setYunDirection(button.getAttribute('data-yun-direction'));
+                if (navState) {
+                    navState.yunDirection = yunDirection;
+                    InputState.save(win, navState);
+                    if (win && win.history && win.history.replaceState) {
+                        win.history.replaceState(null, '', '#' + InputState.encode(navState));
+                    }
+                    updateBackLink();
+                }
+                if (state && state.r) { doPaipan(); }
+            });
+        });
+        setYunDirection(yunDirection);
 
         // 静态区块
         $('mainTable').innerHTML = buildMainTable();
@@ -6194,6 +6268,7 @@ function GetGX(tg, dz) {
                 gender: doc.querySelector('input[name=gender]:checked').value,
                 zwz: $('zwz').checked,
                 zty: $('zty').checked,
+                yunDirection: yunDirection,
                 blindPaipanTechnique: $('blindPaipanTechnique').checked
             };
             if ($('mode').value === 'lunar') {
@@ -6244,7 +6319,7 @@ function GetGX(tg, dz) {
 
         // "← 返回排盘"链接: 开发版(gods12.html,有外链script)与线上PWA(有manifest链接)都回 index.html;
         // 仅本地成品(dist/十二神.html,无外链无manifest)回 排盘软件.html
-        (function () {
+        function updateBackLink() {
             var back = $('backMain');
             if (back) {
                 var isDev = !!doc.querySelector('script[src]');
@@ -6252,7 +6327,8 @@ function GetGX(tg, dz) {
                 var base = (isDev || isPwa) ? 'index.html' : '排盘软件.html';
                 back.href = backHref(base, navState);
             }
-        })();
+        }
+        updateBackLink();
 
         // URL 参数自动排盘(主页面"串宫押运十二神 →"跳转而来):
         // 支持 hash 或 query,字段 mode/year/month/day/hour/minute/leap/gender/zwz/zty/blind/city/path/lat/lon/manual
@@ -6284,6 +6360,7 @@ function GetGX(tg, dz) {
             $('zwz').checked = (q.zwz !== false);
             $('zty').checked = !!q.zty;
             if (q.blind !== undefined) { $('blindPaipanTechnique').checked = (q.blind !== false); }
+            setYunDirection(q.yunDirection || 'auto');
             // 出生地: path 回填级联(优先); manual+lat/lon 走手动经纬度
             if (q.manual && q.lat !== undefined && q.lon !== undefined) {
                 $('country').value = 'manual';
