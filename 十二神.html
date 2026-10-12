@@ -13,18 +13,22 @@
 /* 排盘 UI 样式(纯原生,无外部依赖) */
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 16px;
+  margin: 0; padding: 10px;
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-  background: #f5f6f8; color: #2b2b2b; font-size: 14px;
+  background: #f5f6f8; color: #2b2b2b; font-size: 14px; line-height: 1.35;
 }
 #app { max-width: 980px; margin: 0 auto; }
-h1 { font-size: 20px; margin: 8px 0 16px; }
+h1 { font-size: 20px; margin: 4px 0 10px; }
 h1 small { font-size: 12px; color: #888; font-weight: normal; margin-left: 8px; }
-h2 { font-size: 15px; margin: 0 0 10px; border-left: 4px solid #4a7ebb; padding-left: 8px; }
+h2 { font-size: 15px; margin: 0 0 6px; border-left: 4px solid #4a7ebb; padding-left: 7px; }
 h2 small { font-size: 12px; color: #888; font-weight: normal; }
 
-form { background: #fff; border: 1px solid #e3e5e8; border-radius: 8px; padding: 12px 16px; }
-.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0; }
+p { margin: 5px 0; }
+h3 { font-size: 14px; margin: 8px 0 4px; }
+details { margin: 4px 0; }
+summary { cursor: pointer; color: #596979; font-size: 12px; padding: 2px 0; }
+form { background: #fff; border: 1px solid #e3e5e8; border-radius: 6px; padding: 8px 12px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 5px 0; }
 label { display: flex; align-items: center; gap: 4px; }
 label.inline { font-weight: normal; }
 input[type=number], input[type=text], select {
@@ -33,7 +37,7 @@ input[type=number], input[type=text], select {
 input[type=number] { width: 64px; }
 #city { width: 220px; }
 button {
-  padding: 6px 28px; font-size: 15px; background: #4a7ebb; color: #fff;
+  padding: 5px 18px; font-size: 14px; background: #4a7ebb; color: #fff;
   border: none; border-radius: 4px; cursor: pointer;
 }
 button:hover { background: #3a6da8; }
@@ -51,12 +55,12 @@ button:hover { background: #3a6da8; }
 
 section {
   background: #fff; border: 1px solid #e3e5e8; border-radius: 8px;
-  padding: 14px 16px; margin-top: 14px;
+  padding: 9px 12px; margin-top: 8px;
 }
 section.feature { border-color: #4a7ebb; }
 
 table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: center; }
+th, td { border: 1px solid #e0e0e0; padding: 4px 6px; text-align: center; }
 th { background: #f0f3f7; }
 /* 四柱表: 走参考图的横向分隔线风格,去掉纵向网格线 */
 table.pan th, table.pan td { border-left: none; border-right: none; }
@@ -74,11 +78,11 @@ tr.boundary td { background: #f8f9fb; }
 a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb; text-decoration: none; }
 a.jump:hover { text-decoration: underline; }
 /* 流年/流月/流日下钻 */
-.drill-title { margin: 10px 0 6px; }
+.drill-title { margin: 7px 0 4px; }
 /* 大运/流年/流月 卡片流(参考问真八字: 横向一行,卡内竖排 年/干支/十神) */
-.strip { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 2px 0 6px; }
+.strip { display: flex; flex-wrap: nowrap; gap: 5px; overflow-x: auto; padding: 1px 0 4px; }
 .scard { flex: 0 1 auto; min-width: 76px; border: 1px solid #e0e0e0; border-radius: 6px;
-  padding: 5px 8px; text-align: center; background: #fff; }
+  padding: 4px 6px; text-align: center; background: #fff; }
 .scard .yr { font-size: 11px; color: #666; }
 .scard .age { font-size: 11px; color: #888; }
 .scard .gz { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
@@ -98,7 +102,7 @@ a.jump:hover { text-decoration: underline; }
 .scard.covered { background: #fafafa; }
 .scard.covered .gz { color: #bbb; text-decoration: line-through; }
 .scard.covered .wx-mu, .scard.covered .wx-huo, .scard.covered .wx-tu, .scard.covered .wx-jin, .scard.covered .wx-shui { color: #bbb; }
-.days-grid { flex-wrap: nowrap; gap: 8px; }
+.days-grid { flex-wrap: nowrap; gap: 5px; }
 .days-grid .scard { flex-shrink: 0; }
 .day-cell { font-size: 12px; }
 .day-cell.clk { cursor: pointer; }
@@ -106,28 +110,40 @@ a.jump:hover { text-decoration: underline; }
 .day-cell.sel { border-color: #4a7ebb; background: #eef3fa; box-shadow: 0 0 0 2px #4a7ebb inset; }
 .via { color: #8a6d3b; font-size: 12px; }
 .bazi-big { font-size: 26px; font-weight: bold; letter-spacing: 6px; margin: 6px 0; }
-.cards { display: flex; gap: 12px; flex-wrap: wrap; }
-.card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 14px; min-width: 200px; flex: 1; }
+.cards { display: flex; gap: 6px; flex-wrap: wrap; }
+.card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 8px; min-width: 180px; flex: 1; }
 .card .gz { font-size: 22px; font-weight: bold; }
-footer { margin: 18px 0 8px; }
+footer { margin: 10px 0 6px; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid #4a7ebb; outline-offset: 2px; }
+/* 关系按天干/地支两组横排，关系和柱位同时保留。 */
+.gx-groups { margin-top: 5px; }
+.gx-row { display: flex; align-items: baseline; gap: 7px; padding: 5px 0; }
+.gx-row + .gx-row { border-top: 1px solid #e8edf2; }
+.gx-label { flex: 0 0 30px; color: #596979; font-size: 12px; font-weight: bold; }
+.gx-items { min-width: 0; flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; }
+.gx-chip { display: inline-flex; align-items: baseline; gap: 5px; max-width: 100%; border: 1px solid #dfe6ee;
+  border-radius: 4px; background: #f8fafc; padding: 2px 5px; }
+.gx-relation { font-size: 13px; font-weight: 500; }
+.gx-position { color: #6f7983; font-size: 11px; overflow-wrap: anywhere; }
 .wxbar { display: flex; height: 18px; border-radius: 4px; overflow: hidden; margin: 6px 0 10px; }
 .wxbar div { color: #fff; font-size: 11px; text-align: center; line-height: 18px; }
 
 /* 手机端适配(PWA): 窄屏堆叠、表格横滑、触屏输入 */
 @media (max-width: 640px) {
-  body { padding: 8px; font-size: 13px; }
+  body { padding: 6px; font-size: 13px; }
   h1 { font-size: 16px; }
   h1 small { display: block; margin: 4px 0 0; }
-  .row { gap: 8px 10px; }
+  .row { gap: 5px 8px; }
   label { flex-wrap: wrap; }
   input[type=number] { width: 56px; padding: 6px 4px; font-size: 15px; }
   input[type=text], input[type=search], select { padding: 6px 4px; font-size: 15px; max-width: 100%; }
   input[type=search] { width: 100%; }
   button { padding: 8px 24px; font-size: 15px; }
-  section { overflow-x: auto; padding: 10px; }
+  .tabbtn { min-height: 36px; }
+  section { overflow-x: auto; padding: 7px 8px; }
   th, td { padding: 4px 5px; font-size: 12px; white-space: nowrap; }
   .bazi-big { font-size: 20px; letter-spacing: 2px; }
-  .card { min-width: 130px; padding: 8px 10px; }
+  .card { min-width: 130px; padding: 5px 7px; }
   .via { font-size: 11px; }
   .scard { min-width: 64px; padding: 4px 5px; }
   .scard .gz { font-size: 17px; }
@@ -139,7 +155,7 @@ footer { margin: 18px 0 8px; }
 
 /* ===== 十二神页面(gods12.html) ===== */
 .tabbtn {
-  padding: 6px 18px; font-size: 14px; background: #fff; color: #4a7ebb;
+  padding: 4px 12px; font-size: 14px; background: #fff; color: #4a7ebb;
   border: 1px solid #4a7ebb; border-radius: 4px; cursor: pointer;
 }
 .tabbtn:hover { background: #eef3fa; }
@@ -158,7 +174,7 @@ footer { margin: 18px 0 8px; }
 /* 被覆盖的跳月整行置灰,干支不再抢色 */
 tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr.covered .wx-shui { color: #bbb; }
 /* 命盘三排(横排): 左侧小标签,右侧四字 flex 均匀横排,五行着色保留 */
-.pan3row { display: flex; align-items: baseline; gap: 8px 28px; margin: 6px 0; }
+.pan3row { display: flex; align-items: baseline; gap: 6px 18px; margin: 4px 0; }
 .pan3row .pan3label { flex: 0 0 52px; color: #888; font-size: 13px; }
 .pan3row .gz3 { font-size: 26px; font-weight: bold; min-width: 40px; text-align: center; }
 .pan3row .gz3s { font-size: 18px; font-weight: bold; min-width: 64px; text-align: center; }
