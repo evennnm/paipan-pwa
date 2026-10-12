@@ -79,6 +79,14 @@ a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb
 a.jump:hover { text-decoration: underline; }
 /* 流年/流月/流日下钻 */
 .drill-title { margin: 7px 0 4px; }
+.drill-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px;
+  margin: 8px 0 4px; padding: 4px 7px; background: #f0f3f7; border-left: 3px solid #4a7ebb; border-radius: 3px; }
+.drill-name { flex: 0 0 auto; font-size: 14px; font-weight: bold; color: #2b2b2b; }
+.drill-subtitle { font-size: 12px; font-weight: normal; color: #596979; }
+.drill-note { font-size: 11px; color: #737e88; margin: 3px 0 5px; }
+.drill-context { font-size: 12px; color: #596979; margin: 4px 0; }
+.period-date { display: inline-block; white-space: nowrap; }
+.scard[data-jieqi] { flex-shrink: 0; }
 /* 大运/流年/流月 卡片流(参考问真八字: 横向一行,卡内竖排 年/干支/十神) */
 .strip { display: flex; flex-wrap: nowrap; gap: 5px; overflow-x: auto; padding: 1px 0 4px; }
 .scard { flex: 0 1 auto; min-width: 76px; border: 1px solid #e0e0e0; border-radius: 6px;

@@ -79,6 +79,14 @@ a.jump { font-size: 13px; font-weight: normal; margin-left: 12px; color: #4a7ebb
 a.jump:hover { text-decoration: underline; }
 /* 流年/流月/流日下钻 */
 .drill-title { margin: 7px 0 4px; }
+.drill-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px;
+  margin: 8px 0 4px; padding: 4px 7px; background: #f0f3f7; border-left: 3px solid #4a7ebb; border-radius: 3px; }
+.drill-name { flex: 0 0 auto; font-size: 14px; font-weight: bold; color: #2b2b2b; }
+.drill-subtitle { font-size: 12px; font-weight: normal; color: #596979; }
+.drill-note { font-size: 11px; color: #737e88; margin: 3px 0 5px; }
+.drill-context { font-size: 12px; color: #596979; margin: 4px 0; }
+.period-date { display: inline-block; white-space: nowrap; }
+.scard[data-jieqi] { flex-shrink: 0; }
 /* 大运/流年/流月 卡片流(参考问真八字: 横向一行,卡内竖排 年/干支/十神) */
 .strip { display: flex; flex-wrap: nowrap; gap: 5px; overflow-x: auto; padding: 1px 0 4px; }
 .scard { flex: 0 1 auto; min-width: 76px; border: 1px solid #e0e0e0; border-radius: 6px;
@@ -265,10 +273,10 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
     <section><h2>胎元 / 命宫 / 身宫</h2><div id="secPalaces"></div></section>
     <section id="ancSS"><h2>神煞 <small class="muted">叠加大运/流年/流月/流日后各多一列</small></h2><div id="secShensha"></div></section>
     <section id="ancGX"><h2>刑冲穿绝与合会 <small class="muted">随下方大运/流年/流月/流日下钻重算</small></h2><div id="secGX"></div></section>
-    <section><h2>大运 <small>点大运卡片下钻:流年 → 流月 → 流日</small>
+    <section><h2>运程 <small>大运 → 流年 → 流月 → 流日，小运与流年对应</small>
       <a class="jump" href="#ancGX">↑ 刑冲穿绝</a><a class="jump" href="#ancSS">↑ 神煞</a></h2><div id="secDayun"></div>
       <div id="drillBox" style="display:none">
-        <p class="drill-title">节令口径:
+        <p class="drill-title">流年、流月交界日期：
           <label class="inline"><input type="radio" name="jqlocal" value="local" checked> 本地实际节令(纬度调月令)</label>
           <label class="inline"><input type="radio" name="jqlocal" value="national"> 全国统一节气</label>
           <span class="muted">起运公历时间为近似换算(出生时间+起运岁数),标"约"</span>
@@ -5330,6 +5338,7 @@ function GetGX(tg, dz) {
         L.push('</tbody></table>');
         // 大运卡片流(点卡片下钻流年/流月/流日): 起讫年 / 年龄区间 / 着色干支 / 十神
         var qy = liunian.qiyunDate(r);
+        L.push(drillHeading('大运', '每步10年 · ' + esc(d.dirText) + ' · 点击大运查看流年'));
         L.push('<div class="strip">');
         d.yun.forEach(function (y, i) {
             var y0 = qy.year + 10 * i, y1 = y0 + 9;
@@ -5363,6 +5372,11 @@ function GetGX(tg, dz) {
 
     function fmtD(a) { return a[0] + '-' + a[1] + '-' + a[2]; }
 
+    function drillHeading(name, context) {
+        return '<h3 class="drill-heading"><span class="drill-name">' + esc(name) + '</span>'
+            + '<span class="drill-subtitle">' + context + '</span></h3>';
+    }
+
     function pad2(n) { return ('0' + n).slice(-2); }
     function clockDate(t) { return t.year + '-' + pad2(t.month) + '-' + pad2(t.day); }
     function clockTime(t) { return pad2(t.hour) + ':' + pad2(t.minute); }
@@ -5392,8 +5406,9 @@ function GetGX(tg, dz) {
         }
         var now = (nowYear === undefined || nowYear === null) ? new Date().getFullYear() : nowYear;
         var L = [];
-        L.push('<p class="drill-title">大运 <b>' + wxGZ(y.gz) + '</b>(' + (y.sui+1) + '虚岁' + y.months + '个月起,' + y.qiYunText
-            + ') <span class="muted">立春交界按' + (useLocal ? '本地实际节令' : '全国统一节气') + ';点流年看流月</span></p>');
+        L.push(drillHeading('流年', '所属大运：<b>' + wxGZ(y.gz) + '</b> · ' + y.qiYunYear + '—' + (y.qiYunYear+9) + '年'
+            + ' · ' + (y.sui+1) + '虚岁' + y.months + '个月起运'));
+        L.push('<p class="drill-note">交界按' + (useLocal ? '本地实际节令' : '全国统一节气') + ' · 点击流年查看流月 · 大运起始日期' + y.qiYunText + '</p>');
         L.push('<div class="strip">');
         y.liunian.forEach(function (n) {
             var boundary = useLocal
@@ -5409,7 +5424,8 @@ function GetGX(tg, dz) {
                 + '</div>');
         });
         L.push('</div>');
-        L.push('<p class="drill-title">小运 <span class="muted">时柱起1虚岁，' + (r.dayun.shun?'顺—逆—顺':'逆—顺—逆') + '</span></p><div class="strip xiaoyun-strip">');
+        L.push(drillHeading('小运', '与上方流年逐年对应 · 时柱起1虚岁 · ' + (r.dayun.shun?'顺—逆—顺':'逆—顺—逆'))
+            + '<div class="strip xiaoyun-strip">');
         y.liunian.forEach(function(n) { L.push(xiaoyunCard(r,n.year)); });
         L.push('</div>');
         return L.join('');
@@ -5419,10 +5435,11 @@ function GetGX(tg, dz) {
     function buildDrillLiuyue(r, year, useLocal) {
         var ly = liunian.liuyueList(r, year, useLocal);
         var L = [];
-        L.push('<p class="drill-title">流年 <b>' + year + ' ' + wxGZ(ly.yearGZ) + '</b> <span class="muted">月区间右端不含;点流月看流日</span></p>');
+        L.push(drillHeading('流月', '所属流年：<b>' + year + '年 ' + wxGZ(ly.yearGZ) + '</b> · ' + (year-r.input.year+1) + '虚岁'));
+        L.push('<p class="drill-note">按节令分月 · 日期区间含开始、不含结束 · 点击流月查看流日</p>');
         var small = Paipan.xiaoyun.forYear(r,year);
         if (small) {
-            L.push('<p>本年小运：<b>' + wxGZ(small.gz) + '</b> · ' + small.age + '虚岁</p>'
+            L.push('<p class="drill-context">所选' + year + '年小运：<b>' + wxGZ(small.gz) + '</b> · ' + small.age + '虚岁</p>'
                 + '<details><summary>小运推算过程</summary><p>' + small.pattern + '：时柱' + esc(r.pillars.hour.gz)
                 + '为1虚岁 → 首运' + small.first.age + '虚岁' + esc(small.first.gz)
                 + '；每十年干不变、支隔位' + (small.shun?'逆':'顺') + '排 → 最近节点'
@@ -5439,9 +5456,8 @@ function GetGX(tg, dz) {
                     + '<div class="via">被' + esc(m.coveredBy) + '覆盖,无' + m.zhiName + '月</div></div>');
                 return;
             }
-            var span = useLocal
-                ? (m.from[1] + '-' + m.from[2] + '~' + m.to[1] + '-' + m.to[2])
-                : (m.from[1] + '-' + m.from[2] + ' ' + m.fromTime + '~' + m.to[1] + '-' + m.to[2] + ' ' + m.toTime);
+            var span = '<span class="period-date">' + fmtD(m.from) + (useLocal ? '' : ' ' + m.fromTime)
+                + '</span><br><span class="period-date">— ' + fmtD(m.to) + (useLocal ? '' : ' ' + m.toTime) + '</span>';
             L.push('<div class="scard clk" data-jieqi="' + m.seq + '">'
                 + '<div class="yr">' + m.name + '(' + m.zhiName + '月)</div>'
                 + '<div class="gz">' + wxGZ(m.gz) + '</div>'
@@ -5460,11 +5476,12 @@ function GetGX(tg, dz) {
     function buildDrillLiuri(r, year, jieqiIdx, useLocal) {
         var lr = liunian.liuriList(r, year, jieqiIdx, useLocal);
         if (lr.covered || !lr.days.length) {
-            return '<p class="muted">该节令被覆盖,无此月。</p>';
+            return drillHeading('流日', '所选流月没有有效日期区间') + '<p class="muted">该节令被覆盖,无此月。</p>';
         }
         var m = lr.month;
         var L = [];
-        L.push('<p class="drill-title">流月 <b>' + year + ' ' + wxGZ(m.gz) + '月</b>(' + m.name + '起,' + fmtD(m.from) + ' ~ ' + fmtD(m.to) + '不含,共' + lr.days.length + '天)</p>');
+        L.push(drillHeading('流日', '所属流月：<b>' + year + '年 ' + wxGZ(m.gz) + '</b> · ' + esc(m.name) + '（' + m.zhiName + '月）'));
+        L.push('<p class="drill-note">日期：' + fmtD(m.from) + ' 至 ' + fmtD(m.to) + '（结束日不含） · 共' + lr.days.length + '天 · 点击流日叠加关系与神煞</p>');
         L.push('<div class="strip days-grid">' + lr.days.map(function (d, i) {
             return '<div class="scard clk day-cell" data-day="' + i + '"><div class="yr">' + fmtD(d.solar) + '</div>'
                 + '<div class="gz">' + wxGZ(d.gz) + '</div><div class="ss">' + esc(ssOf(r,d.code)) + '</div>'
