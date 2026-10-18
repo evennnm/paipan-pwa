@@ -10,6 +10,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
+/* 命盘工作台：同一套视觉令牌，主盘与串宫共用；离线无字体依赖。 */
+:root {
+  --canvas: #edf2f6; --paper: #ffffff; --ink: #243342;
+  --secondary: #607284; --accent: #345c85; --line: #dbe4ec;
+}
 /* 排盘 UI 样式(纯原生,无外部依赖) */
 * { box-sizing: border-box; }
 body {
@@ -214,11 +219,127 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
   .gods-page .shen-change-target { display: block; }
 }
 
+/* 信息先于装饰：四柱是主视觉，辅助结果紧邻，不以缩字代替排版。 */
+body { background: var(--canvas); color: var(--ink); line-height: 1.5; padding: 14px 18px; font-variant-numeric: tabular-nums; }
+#app { max-width: 1200px; }
+.app-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 2px 8px; }
+.app-header h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: 1px; }
+.app-header h1 small { color: var(--secondary); letter-spacing: 0; margin-left: 10px; }
+.header-note { color: var(--secondary); font-size: 12px; }
+form { border-color: var(--line); border-radius: 10px; padding: 8px 14px; }
+.row { gap: 5px 12px; }
+input, select, button { font-family: inherit; }
+input[type=search] { border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; font-size: 13px; }
+input[type=number], input[type=text], select { border-color: #bac9d6; color: var(--ink); background: var(--paper); }
+button { background: var(--accent); }
+button:hover { background: #284b70; }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.tabbtn { color: var(--accent); border-color: #b7c8d8; border-radius: 5px; }
+.tabbtn.on { background: var(--accent); border-color: var(--accent); }
+.muted, h1 small, h2 small, .scard .age, .gzcell .wxtag, td .wxtag { color: var(--secondary); }
+section { border-color: var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+section.feature { border-color: #aabed2; }
+h2 { border: 0; padding: 0; font-size: 15px; font-weight: 650; margin-bottom: 8px; }
+h2 small { margin-left: 6px; color: var(--secondary); }
+.workspace-nav { display: flex; gap: 6px 20px; flex-wrap: wrap; align-items: center; padding: 10px 4px 0; }
+.workspace-nav a { color: var(--accent); text-decoration: none; font-size: 13px; padding: 2px 0; }
+.workspace-nav a:hover { text-decoration: underline; }
+.workspace-nav .jump { margin-left: auto; font-weight: 650; }
+.birth-panel { position: relative; }
+.birth-panel h2 { display: none; }
+.bazi-big { font-size: 18px; letter-spacing: 3px; margin: 0 0 5px; }
+.birth-summary { display: flex; flex-wrap: wrap; gap: 3px 18px; font-size: 13px; }
+.birth-summary span { overflow-wrap: anywhere; }
+.mode-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--secondary); font-size: 12px; margin-top: 5px; }
+.mode-summary span + span { border-left: 1px solid var(--line); padding-left: 12px; }
+.calculation { border-top: 1px solid var(--line); padding-top: 5px; margin: 7px 0 0; }
+.calculation summary { font-size: 12px; color: var(--secondary); padding: 2px 0; width: fit-content; }
+.calculation[open] summary { color: var(--accent); margin-bottom: 7px; }
+.calculation table { margin: 5px 0; }
+.calculation .via { line-height: 1.7; overflow-wrap: anywhere; }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); align-items: start; gap: 12px; }
+.overview-grid > *, .overview-side, #secBasic, #secPalaces, #secChildGuards { min-width: 0; }
+.overview-side section { margin-top: 10px; }
+.overview-pillars .pan { table-layout: fixed; }
+.pan th:first-child { width: 48px; }
+.overview-pillars { padding-bottom: 10px; }
+table.pan th, table.pan td { padding: 7px 5px; border-color: #e3eaf0; }
+table.pan th { color: var(--secondary); }
+table.pan thead th { background: #eff4f8; color: var(--ink); padding: 8px 5px; }
+table.pan td { overflow-wrap: anywhere; }
+.pillar-token { display: inline-block; white-space: nowrap; }
+td.gzcell { font-family: 'SimSun', 'Songti SC', serif; font-size: 34px; line-height: 1.3; font-weight: 600; }
+.gzcell .wxtag { font-family: 'Microsoft YaHei', sans-serif; }
+.palace-cards { flex-wrap: nowrap; gap: 0; }
+.palace-cards .palace-card { min-width: 0; padding: 0 6px; border: 0; border-radius: 0; text-align: center; flex: 1 1 0; }
+.palace-card + .palace-card { border-left: 1px solid var(--line); }
+.palace-name { font-size: 12px; color: var(--secondary); }
+.palace-card .gz { font-family: 'SimSun', 'Songti SC', serif; font-size: 25px; line-height: 1.5; }
+.palace-card .nayin { font-size: 12px; color: #725d40; white-space: nowrap; }
+.guard-summary { display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: var(--secondary); }
+.guard-count { font-size: 21px; line-height: 1.2; font-weight: 650; color: var(--ink); }
+.guard-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.guard-tags .tag { background: #eef3f7; color: #425c73; border: 1px solid #dbe5ee; font-size: 12px; }
+.guard-disclaimer { color: var(--secondary); font-size: 11px; margin: 7px 0 0; }
+.guard-basis { margin: 6px 0; padding-left: 18px; font-size: 12px; line-height: 1.7; }
+.guard-basis li { margin: 4px 0; }
+.calculation a { color: var(--accent); }
+.stat-panel { font-size: 12px; }
+.stat-panel .wxbar { margin: 3px 0 6px; height: 16px; border-radius: 3px; }
+.stat-panel .wxbar div { line-height: 16px; }
+.stat-panel p { margin: 3px 0; color: var(--secondary); }
+.drill-heading { background: #edf3f8; border-color: var(--accent); border-radius: 4px; padding: 5px 8px; }
+.scard { border-color: var(--line); border-radius: 7px; padding: 6px 8px; min-width: 80px; }
+.scard.sel, .day-cell.sel { border-color: var(--accent); background: #edf3fa; box-shadow: 0 0 0 1px var(--accent) inset; }
+.strip { gap: 6px; scrollbar-width: thin; scrollbar-color: #b8c8d7 transparent; }
+.strip .scard { flex-shrink: 0; }
+.gods-page #secBasic > .overview-grid { margin-top: 8px; }
+.gods-page .overview-side { padding-left: 10px; border-left: 1px solid var(--line); }
+.gods-page .qz3cell .gz3 { font-family: 'SimSun', 'Songti SC', serif; font-size: 26px; }
+.gods-page .gods-pan { margin-bottom: 7px; }
+section, #overview { scroll-margin-top: 12px; }
+@media (max-width: 900px) {
+  .overview-grid { grid-template-columns: minmax(0, 1.4fr) minmax(265px, 1fr); gap: 9px; }
+  table.pan th, table.pan td { padding: 6px 4px; }
+}
+@media (max-width: 680px) {
+  body { padding: 8px; font-size: 13px; }
+  .app-header h1 { font-size: 19px; }
+  .app-header h1 small { display: inline; font-size: 11px; margin-left: 8px; }
+  .header-note { display: none; }
+  form { padding: 7px 9px; }
+  .row { gap: 6px 9px; }
+  .row > span { max-width: 100%; }
+  .row label { max-width: 100%; }
+  .row .city-box { flex: 1 1 100%; }
+  input[type=search] { min-width: 0; flex: 1; }
+  button { padding: 7px 13px; }
+  .tabbtn { font-size: 13px; }
+  section { padding: 10px; margin-top: 8px; }
+  .workspace-nav { gap: 5px 14px; }
+  .workspace-nav .jump { margin-left: 0; }
+  .bazi-big { font-size: 17px; letter-spacing: 2px; }
+  .birth-summary { gap: 3px 12px; }
+  .overview-grid { display: block; }
+  .overview-side { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .overview-side section { margin-top: 8px; }
+  table.pan td { white-space: normal; }
+  td.gzcell { font-size: 28px; }
+  table.pan th:first-child { width: 38px; }
+  table.pan th, table.pan td { padding: 6px 3px; }
+  .pan .wxtag { margin-left: 1px; font-size: 9px; }
+  .birth-panel table td { white-space: normal; overflow-wrap: anywhere; }
+  .scard { min-width: 70px; padding: 5px 6px; }
+  .gods-page .overview-side { padding-left: 0; border-left: 0; }
+  .gods-page .gods-pan .qzann { font-size: 10px; }
+  .gods-page .qz3cell .gz3 { font-size: 23px; }
+}
+
 </style>
 </head>
 <body class="gods-page">
 <div id="app">
-  <h1>盲派串宫押运 · 排十二神 <small>排盘驱动 · 规则出自《盲派教学》</small></h1>
+  <header class="app-header"><h1>串宫押运 <small>十二神工作台</small></h1><span class="header-note">原盘 · 大运 · 流年</span></header>
   <p style="margin:0 0 8px"><a id="backMain" class="jump" href="index.html">← 返回排盘</a></p>
 
   <form id="form" onsubmit="return false;">
@@ -259,7 +380,7 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
       </div>
     </div>
     <div class="row">
-      <label><input id="zwz" type="checkbox" checked> 区分晚子时(23:00-24:00日柱按当日,时柱按次日)</label>
+      <label title="23:00-24:00日柱按当日，时柱按次日"><input id="zwz" type="checkbox" checked> 区分晚子时</label>
       <label><input id="zty" type="checkbox"> 真太阳时校正 <span class="muted">(仅定日、时柱;默认关)</span></label>
       <label><input id="blindPaipanTechnique" type="checkbox" checked> 盲派排盘技法 <span class="muted">(纬度调整月令)</span></label>
       <span>运程顺逆：
@@ -3455,6 +3576,8 @@ tr.covered .wx-mu, tr.covered .wx-huo, tr.covered .wx-tu, tr.covered .wx-jin, tr
             input: {
                 year: optY, month: optM, day: optD, hour: optH, minute: optI, second: optS,
                 gender: opt.gender || null,
+                lon: opt.lon !== undefined && opt.lon !== null ? parseFloat(opt.lon) : (city ? city.j : null),
+                lat: latRaw,
                 yunDirection: opt.yunDirection === 'forward' || opt.yunDirection === 'reverse' ? opt.yunDirection : 'auto',
                 city: opt.city || null
             },
@@ -4652,6 +4775,77 @@ function GetGX(tg, dz) {
  */
 
 </script>
+<script>/* ==== src/engine/child_guards.js ==== */
+/** 小儿关·日主对照表版。固定查出生时支，不混用年干/年支版本。
+ * 数据来源：灵昭道苑《八字神煞、小儿关煞》三张对照表。
+ * 无情关未月原表“戊亥巳”排字校正为“戌亥巳”，详见黄金标准。
+ * 传统民俗资料，不提供疾病、死亡断言或育儿/医疗建议。
+ */
+(function(root,factory){
+    if(typeof module==='object'&&module.exports) module.exports=factory();
+    else root.ChildGuards=factory();
+}(typeof self!=='undefined'?self:this,function(){
+    'use strict';
+    var GAN='甲乙丙丁戊己庚辛壬癸', ZHI='子丑寅卯辰巳午未申酉戌亥';
+    var source={title:'灵昭道苑：八字神煞、小儿关煞',url:'https://www.356.com.tw/free/?parent_id=1270'};
+    var rules=[];
+    function add(by,name,cells,note){
+        rules.push(Object.freeze({by:by,name:name,cells:Object.freeze(cells.split('|')),note:note||''}));
+    }
+    add('dayGan','落井关','巳|子|申|戌|卯|巳|子|申|戌|卯');
+    add('dayGan','鸡飞关','巳酉丑|子|子|子|子|巳酉丑|亥卯未|寅午戌|寅午戌|寅午戌');
+    add('dayGan','取命关','申子辰|申子辰|申子辰|申子辰|亥卯未|亥卯未|亥卯未|寅午戌|寅午戌|寅午戌');
+    add('dayGan','雷公关','丑午|丑午|子|子|戌|午|寅|寅|子|子');
+    add('dayGan','断肠关','午未|午未|辰巳|辰巳|||寅|寅|丑|丑','戊、己日原表空白，不作命中。');
+    add('dayGan','千日关','辰午|辰午|申酉|申酉|巳戌|巳戌|寅|寅|丑亥|丑亥');
+    add('dayGan','煞脚关','申酉|申酉|亥子|亥子|寅卯|寅卯|巳午|巳午|辰戌丑未|辰戌丑未');
+    add('dayGan','铁蛇关','辰|辰|未申|未申|寅|寅|戌|戌|丑|丑');
+    add('dayGan','白虎关','酉|酉|子|子|午|午|卯|卯|午|午');
+    add('dayZhi','鬼门关','酉|午|未|申|亥|戌|丑|寅|卯|子|巳|辰');
+    add('dayZhi','五鬼关','辰|巳|午|未|申|酉|戌|亥|子|丑|寅|卯');
+    add('dayZhi','天狗关','戌|亥|子|丑|寅|卯|辰|巳|午|未|申|酉');
+    add('dayZhi','埋儿关','丑|卯|申|丑|卯|申|丑|卯|申|丑|卯|申');
+    add('dayZhi','天吊关','巳午|子卯|辰午|午申|巳午|子卯|辰午|午申|巳午|子卯|辰午|午申');
+    add('dayZhi','短命关','巳|寅|辰|未|巳|寅|辰|未|巳|寅|辰|未');
+    add('dayZhi','和尚关','辰戌丑未|子午卯酉|寅申巳亥|辰戌丑未|子午卯酉|寅申巳亥|辰戌丑未|子午卯酉|寅申巳亥|辰戌丑未|子午卯酉|寅申巳亥');
+    add('dayZhi','汤火煞','午|未|寅|午|未|寅|午|未|寅|午|未|寅');
+    add('dayZhi','夜啼关','寅|未|酉|寅|未|酉|寅|未|酉|寅|未|酉');
+    add('dayZhi','撞命关','巳|未|巳|子|午|午|丑|丑|午|亥|未|亥');
+    // 月支表依寅、卯……子、丑排列；不按公历或农历月份重算。
+    add('monthZhi','直难关','午|午|未|未|卯戌|卯戌|巳申|巳申|寅卯|寅卯|辰酉|辰酉');
+    add('monthZhi','水火关','未戌|未戌|未戌|丑辰|丑辰|丑辰|丑辰|丑辰|丑辰|未辰|未辰|未辰');
+    add('monthZhi','深水关','寅申|寅申|寅申|未|未|未|酉|酉|酉|丑|丑|丑');
+    add('monthZhi','四柱关','巳亥|辰戌|卯酉|寅申|丑未|子午|巳亥|辰戌|卯酉|寅申|丑未|子午');
+    add('monthZhi','将军箭','酉戌辰|酉戌辰|酉戌辰|未卯子|未卯子|未卯子|午寅丑|午寅丑|午寅丑|亥申巳|亥申巳|亥申巳');
+    add('monthZhi','浴盆关','寅|卯|申|丑|戌|酉|辰|巳|午|未|亥|子');
+    add('monthZhi','阎王关','丑未|丑未|丑未|辰戌|辰戌|辰戌|子午|子午|子午|寅卯|寅卯|寅卯');
+    add('monthZhi','无情关','寅酉子|寅酉子|寅酉子|戌亥巳|戌亥巳|戌亥巳|申丑|申丑|申丑|子午|子午|子午','未月“戊亥巳”校正为“戌亥巳”，原表排字及校正依据见黄金标准。');
+    add('monthZhi','百日关','辰戌丑未|寅申巳亥|子午卯酉|辰戌丑未|寅申巳亥|子午卯酉|辰戌丑未|寅申巳亥|子午卯酉|辰戌丑未|寅申巳亥|子午卯酉');
+    add('monthZhi','四季关','丑巳|丑巳|丑巳|辰申|辰申|辰申|亥未|亥未|亥未|寅戌|寅戌|寅戌');
+    add('monthZhi','金锁关','申|酉|戌|亥|子|丑|申|酉|戌|亥|子|丑');
+    var labels={dayGan:'日干',dayZhi:'日支',monthZhi:'月支'};
+    function valid(n,max){return Number.isInteger(n)&&n>=0&&n<max;}
+    function compute(r){
+        var p=r&&r.pillars;
+        if(!p||!p.day||!p.month||!p.hour||!valid(p.day.tg,10)||!valid(p.day.dz,12)||!valid(p.month.dz,12)||!valid(p.hour.dz,12)) {
+            throw new TypeError('小儿关需要有效四柱：日干、日支、月支、时支。');
+        }
+        var basis={dayGan:GAN[p.day.tg],dayZhi:ZHI[p.day.dz],monthZhi:ZHI[p.month.dz],hourZhi:ZHI[p.hour.dz]};
+        var index={dayGan:p.day.tg,dayZhi:p.day.dz,monthZhi:(p.month.dz+10)%12};
+        var hits=[];
+        rules.forEach(function(rule){
+            var targets=rule.cells[index[rule.by]];
+            if(targets.indexOf(basis.hourZhi)>=0) hits.push({
+                name:rule.name,by:rule.by,targets:targets,note:rule.note,
+                basis:labels[rule.by]+basis[rule.by]+'查时支'+basis.hourZhi+'，对照'+targets.split('').join('、')
+            });
+        });
+        return {version:'日主对照表版 · 30项',source:source,basis:basis,hits:hits};
+    }
+    return Object.freeze({compute:compute,rules:Object.freeze(rules),source:Object.freeze(source)});
+}));
+
+</script>
 <script>/* ==== src/engine/paipan.js ==== */
 /**
  * 排盘汇总入口(M1+M2+M3): 四柱 -> 胎元/命宫/身宫 -> 大运 -> 命理关系标注,一次算完并保留全部中间过程
@@ -4667,12 +4861,12 @@ function GetGX(tg, dz) {
         module.exports = factory(
             require('./calendar.js'), require('./geo.js'), require('./localjq.js'),
             require('./pillars.js'), require('./palaces.js'), require('./dayun.js'), require('./relations.js'),
-            require('./shensha.js'), require('./xiaoyun.js')
+            require('./shensha.js'), require('./xiaoyun.js'), require('./child_guards.js')
         );
     } else {
-        root.Paipan = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars, root.Palaces, root.Dayun, root.Relations, root.Shensha, root.Xiaoyun);
+        root.Paipan = factory(root.Calendar, root.Geo, root.LocalJQ, root.Pillars, root.Palaces, root.Dayun, root.Relations, root.Shensha, root.Xiaoyun, root.ChildGuards);
     }
-}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars, Palaces, Dayun, Relations, Shensha, Xiaoyun) {
+}(typeof self !== 'undefined' ? self : this, function (Calendar, Geo, LocalJQ, Pillars, Palaces, Dayun, Relations, Shensha, Xiaoyun, ChildGuards) {
     'use strict';
 
     var cal = new Calendar();
@@ -4699,9 +4893,13 @@ function GetGX(tg, dz) {
             return false;
         }
         r.palaces = pal.compute(r);
+        ['taiyuan','minggong','shengong'].forEach(function(k){
+            r.palaces[k].nayin = rel.nayin(r.palaces[k].code);
+        });
         r.dayun = dy.compute(r, yunCount || 10);
         r.relations = rel.annotate(r);
         r.shensha = ss.compute(r);
+        r.childGuards = ChildGuards.compute(r);
         return r;
     }
 
@@ -6196,6 +6394,15 @@ function GetGX(tg, dz) {
     function buildBasic(r) {
         var L = [];
         L.push('<div class="bazi-big">' + r.bazi.split(' ').map(function (g) { return wxGZ(g); }).join(' ') + '</div>');
+        var coords = (Number.isFinite(r.input.lon) ? '经度' + r.input.lon + '°，' : '') + '纬度' + r.lat.raw + '°';
+        var place = r.city ? r.city.path.join(' / ') : coords;
+        L.push('<div class="birth-summary"><span><b>' + esc(r.input.gender || '未指定性别') + '</b> '
+            + ymd([r.input.year,r.input.month,r.input.day]) + ' ' + r.input.hour + ':' + ('0'+r.input.minute).slice(-2)
+            + '</span><span>农历 ' + esc(r.lunar.text) + '</span><span>' + esc(place) + '</span></div>');
+        L.push('<div class="mode-summary"><span>' + ((!r.technique || r.technique.blindPaipanTechnique) ? '盲派排盘技法' : '全国统一节气')
+            + '</span><span>' + (r.zty ? '真太阳时已校正' : '钟表时间定日时') + '</span><span>起运 ' + esc(r.dayun.start.virtualText)
+            + '</span><span>旬空 ' + esc(r.relations.xunkong.text) + '</span></div>');
+        L.push('<details class="calculation"><summary>出生资料与排盘口径明细</summary>');
         L.push('<table><tbody>');
         L.push('<tr><th>公历</th><td>' + ymd([r.input.year, r.input.month, r.input.day]) + ' ' + r.input.hour + ':' + ('0' + r.input.minute).slice(-2) + '</td>'
             + '<th>农历</th><td>' + esc(r.lunar.text) + '</td></tr>');
@@ -6203,7 +6410,7 @@ function GetGX(tg, dz) {
             + '<th>节气年</th><td>' + r.gzYear + ' 年(' + wxChar(r.pillars.year.gz[0], true) + '年命)</td></tr>');
         var cityText = r.city ? (esc(r.city.path.join(' / ')) + (r.city.via ? '(坐标取' + esc(r.city.via) + ')' : '')) : '(直接给纬度)';
         L.push('<tr><th>城市</th><td>' + cityText + '</td>'
-            + '<th>经纬度</th><td>' + (r.city ? ('东经' + r.city.j + '° 北纬' + r.city.w + '°') : '-') + '</td></tr>');
+            + '<th>经纬度</th><td>' + esc(coords) + '</td></tr>');
         var blindPaipanTechnique = !r.technique || r.technique.blindPaipanTechnique;
         L.push('<tr><th>排盘口径</th><td colspan="3">' + esc(blindPaipanTechnique
             ? '盲派排盘技法（纬度调整月令）'
@@ -6222,7 +6429,7 @@ function GetGX(tg, dz) {
                 + '<br><span class="muted">仅用于日、时柱；年月及大运按钟表时间节令。</span>'
                 + '</td></tr>');
         }
-        L.push('</tbody></table>');
+        L.push('</tbody></table></details>');
         return L.join('');
     }
 
@@ -6242,10 +6449,10 @@ function GetGX(tg, dz) {
             return '<td class="gzcell">' + wxChar(p.dz.name, false) + '<i class="wxtag">' + p.dz.wx + '</i></td>';
         }));
         L.push(row('藏干', function (p) {
-            return '<td>' + p.dz.canggan.map(function (c) { return wxChar(c.name, true) + '<i class="wxtag">' + c.wx + '</i>'; }).join(' ') + '</td>';
+            return '<td>' + p.dz.canggan.map(function (c) { return '<span class="pillar-token">' + wxChar(c.name, true) + '<i class="wxtag">' + c.wx + '</i></span>'; }).join(' ') + '</td>';
         }));
         L.push(row('副星', function (p) {
-            return '<td>' + p.dz.canggan.map(function (c) { return esc(c.ss); }).join(' ') + '</td>';
+            return '<td>' + p.dz.canggan.map(function (c) { return '<span class="pillar-token">' + esc(c.ss) + '</span>'; }).join(' ') + '</td>';
         }));
         L.push(row('星运', function (p) { return '<td>' + esc(p.dz.zhangsheng) + '</td>'; }));
         L.push(row('纳音', function (p) { return '<td>' + esc(p.nayin) + '</td>'; }));
@@ -6253,8 +6460,8 @@ function GetGX(tg, dz) {
         L.push('</tbody></table>');
         // 每柱推算过程
         var P = r.pillars;
-        L.push('<p class="via">年柱:' + esc(P.year.via) + '<br>月柱:' + esc(P.month.via)
-            + '<br>日柱:' + esc(P.day.via) + '<br>时柱:' + esc(P.hour.via) + '</p>');
+        L.push('<details class="calculation"><summary>四柱推算依据</summary><p class="via">年柱:' + esc(P.year.via) + '<br>月柱:' + esc(P.month.via)
+            + '<br>日柱:' + esc(P.day.via) + '<br>时柱:' + esc(P.hour.via) + '</p></details>');
         return L.join('');
     }
 
@@ -6290,9 +6497,30 @@ function GetGX(tg, dz) {
     function buildPalaces(r) {
         var p = r.palaces;
         function card(name, o) {
-            return '<div class="card"><div>' + name + '</div><div class="gz">' + wxGZ(o.gz) + '</div><div class="via">' + esc(o.via) + '</div></div>';
+            return '<div class="card palace-card"><div class="palace-name">' + name + '</div><div class="gz">' + wxGZ(o.gz)
+                + '</div><div class="nayin">' + esc(o.nayin || nayinOf(o.code)) + '</div></div>';
         }
-        return '<div class="cards">' + card('胎元', p.taiyuan) + card('命宫', p.minggong) + card('身宫', p.shengong) + '</div>';
+        return '<div class="cards palace-cards">' + card('胎元', p.taiyuan) + card('命宫', p.minggong) + card('身宫', p.shengong)
+            + '</div><details class="calculation"><summary>胎身命推算依据</summary><p class="via">胎元：' + esc(p.taiyuan.via)
+            + '<br>命宫：' + esc(p.minggong.via) + '<br>身宫：' + esc(p.shengong.via) + '</p></details>';
+    }
+
+    function buildChildGuards(r) {
+        var g = r.childGuards;
+        if (!g) return '<p class="muted">小儿关尚未计算。</p>';
+        var h = '<div class="guard-summary"><span class="guard-count">' + g.hits.length + '</span><span>项命中 <small>／30项对照</small></span></div>';
+        h += '<div class="guard-tags">' + (g.hits.length ? g.hits.map(function(x){
+            return '<span class="tag plain" title="' + esc(x.basis) + '">' + esc(x.name) + '</span>';
+        }).join('') : '<span class="muted">本版本未命中，不代表健康结论。</span>') + '</div>';
+        h += '<p class="guard-disclaimer">传统民俗资料，不作健康预测或育儿依据。</p>';
+        h += '<details class="calculation"><summary>命中依据与规则版本</summary><p>' + esc(g.version)
+            + '，以本命日干、日支、月支查出生时支，不叠加流运。</p>';
+        if (g.hits.length) h += '<ul class="guard-basis">' + g.hits.map(function(x){return '<li><b>' + esc(x.name) + '</b>：' + esc(x.basis)
+            + (x.note ? '。' + esc(x.note) : '') + '</li>';}).join('') + '</ul>';
+        h += '<p class="muted">依据：日干' + esc(g.basis.dayGan) + '、日支' + esc(g.basis.dayZhi) + '、月支' + esc(g.basis.monthZhi)
+            + '、时支' + esc(g.basis.hourZhi) + '。月支沿用当前排盘口径；真太阳时如改变日时柱，查表依据同步变化。</p>';
+        h += '<p><a href="' + g.source.url + '" target="_blank" rel="noopener noreferrer">' + esc(g.source.title) + '</a></p>';
+        return h + '</details>';
     }
 
     function buildDayun(r) {
@@ -6300,7 +6528,7 @@ function GetGX(tg, dz) {
         var L = [];
         L.push('<p>' + esc(d.dirText) + '(' + wxChar(r.pillars.year.gz[0], true) + '年' + (r.input.gender || '') + '),'
             + (d.shun ? '顺数到下一个本地节' : '逆数到上一个本地节') + '。</p>');
-        L.push('<p class="drill-title">起运推导</p>');
+        L.push('<details class="calculation"><summary>起运推导 · ' + esc(d.start.virtualText) + '</summary>');
         L.push('<table><tbody>');
         L.push('<tr><th>出生日</th><td>' + ymd(d.birth.solar) + '(' + esc(d.birth.lunar) + ')</td><td class="via">' + esc(d.birth.via) + '</td></tr>');
         L.push('<tr><th>交节日</th><td>' + esc(d.target.name) + ' ' + ymd(d.target.solar) + '(' + esc(d.target.lunar) + ')</td><td class="via">' + esc(d.target.via) + '</td></tr>');
@@ -6309,7 +6537,7 @@ function GetGX(tg, dz) {
             + (d.div3.remainder ? ',余' + d.div3.remainder + ' 折 ' + d.div3.remMonths + ' 个月' : ',无余')
             + ';再加出生月(' + d.birthOrder + ' 月)' + (d.monthCarry ? ',月数超12进1岁' : '')
             + ' ⇒ <b>' + esc(d.start.virtualText) + '</b><br><span class="muted">起运虚岁 = 起运岁数 + 1；日期仍按原起运岁月换算。</span></td></tr>');
-        L.push('</tbody></table>');
+        L.push('</tbody></table></details>');
         // 大运卡片流(点卡片下钻流年/流月/流日): 起讫年 / 年龄区间 / 着色干支 / 十神
         var qy = liunian.qiyunDate(r);
         L.push(drillHeading('大运', '每步10年 · ' + esc(d.dirText) + ' · 点击大运查看流年'));
@@ -6538,6 +6766,7 @@ function GetGX(tg, dz) {
             secPillars: buildPillars(r),
             secJieqi: buildJieqi(r),
             secPalaces: buildPalaces(r),
+            secChildGuards: buildChildGuards(r),
             secDayun: buildDayun(r),
             secGX: buildGX(r),
             secShensha: buildShensha(r),
@@ -6982,6 +7211,7 @@ function GetGX(tg, dz) {
         buildAll: buildAll,
         buildBasic: buildBasic, buildPillars: buildPillars, buildJieqi: buildJieqi,
         buildPalaces: buildPalaces, buildDayun: buildDayun, buildGX: buildGX, buildShensha: buildShensha, buildStat: buildStat,
+        buildChildGuards: buildChildGuards,
         buildDrillLiunian: buildDrillLiunian, buildDrillLiuyue: buildDrillLiuyue, buildDrillLiuri: buildDrillLiuri,
         buildReverseMatches: buildReverseMatches,
         wxChar: wxChar, wxGZ: wxGZ, wxText: wxText, ssOf: ssOf,
@@ -7051,10 +7281,11 @@ function GetGX(tg, dz) {
 
     // 命盘: 横排三行八字(天干/地支/胎命身) + 基本信息
     function buildBasic(r) {
-        return PanUI.buildBasic(r) + '<h3 class="drill-heading"><span class="drill-name">四柱</span></h3>'
-            + PanUI.buildPillars(r)
-            + '<h3 class="drill-heading"><span class="drill-name">胎元 · 命宫 · 身宫</span></h3>'
-            + PanUI.buildPalaces(r)
+        return PanUI.buildBasic(r) + '<div class="overview-grid"><div class="overview-pillars"><h3 class="drill-heading"><span class="drill-name">四柱</span></h3>'
+            + PanUI.buildPillars(r) + '</div><div class="overview-side">'
+            + '<h3 class="drill-heading"><span class="drill-name">胎元 · 命宫 · 身宫纳音</span></h3>'
+            + PanUI.buildPalaces(r) + '<h3 class="drill-heading"><span class="drill-name">小儿关</span></h3>'
+            + PanUI.buildChildGuards(r) + '</div></div>'
             + '<p class="muted">日柱旬空：' + esc(r.relations.xunkong.branches.join('、'))
             + ' · 年柱旬空：' + esc(G.kongwangOf(cal.ctg[r.pillars.year.tg], cal.cdz[r.pillars.year.dz]).join('、')) + '</p>';
     }
